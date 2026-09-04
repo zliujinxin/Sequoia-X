@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sequoia-X · 选股观察台</title>
+<link rel="icon" href="data:,">
+<style>
+:root{--paper:#f4f3ed;--surface:#fffef9;--ink:#21382f;--muted:#738078;--line:#dbe0d5;--accent:#1c6048;--red:#b04435;--green:#25846a;--amber:#9b7132}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:"Microsoft YaHei","PingFang SC",sans-serif;font-size:13px}button,input,select{font:inherit}button,a,select{touch-action:manipulation}button{cursor:pointer}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #b88e43;outline-offset:3px}a{color:var(--accent)}.mono{font-family:Consolas,"Courier New",monospace;font-variant-numeric:tabular-nums}.mast{padding:20px 34px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:16px}.brand{display:flex;align-items:center;gap:12px;font-weight:700;letter-spacing:2px}.mark{width:34px;height:34px;background:var(--ink);color:#f5f3df;display:grid;place-items:center;letter-spacing:-2px;font-family:Georgia,serif;font-size:23px}.mast small{color:var(--muted);letter-spacing:0;font-weight:400}.page{max-width:1700px;margin:auto;padding:28px 34px 40px}.hero{display:flex;align-items:flex-end;justify-content:space-between;gap:20px}.eyebrow{font-size:11px;color:var(--accent);letter-spacing:2px;font-weight:700}h1{font-family:"Noto Serif SC","SimSun",serif;font-size:38px;font-weight:500;letter-spacing:3px;margin:8px 0 10px}p{line-height:1.7;margin:8px 0}.muted{color:var(--muted)}.btn{border:1px solid var(--line);background:var(--surface);padding:9px 13px;color:var(--ink);border-radius:4px}.btn:hover{border-color:var(--accent)}.stats{display:grid;grid-template-columns:repeat(4,1fr);border-top:2px solid var(--ink);border-bottom:1px solid var(--line);margin:25px 0 20px}.stat{padding:17px 20px;border-right:1px solid var(--line)}.stat:first-child{padding-left:0}.stat:last-child{border:0}.stat span{display:block;color:var(--muted);font-size:12px}.stat b{display:block;font:34px Georgia,serif;margin-top:7px}.notice{border-left:3px solid var(--amber);background:#eee9db;padding:10px 14px;font-size:12px;line-height:1.8;margin:16px 0}.toolbar{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin:20px 0 12px}.toolbar input{min-width:170px;flex:1}.toolbar input,.toolbar select{background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:10px 12px;color:var(--ink)}.toolbar label{display:flex;align-items:center;gap:6px;font-size:12px}.toolbar select{max-width:190px}.workspace{display:grid;grid-template-columns:minmax(400px,46%) minmax(0,1fr);align-items:start;gap:22px}.list{border:1px solid var(--line);background:var(--surface);border-radius:5px;overflow:hidden}.listhead{padding:13px 15px;display:flex;justify-content:space-between;border-bottom:1px solid var(--line);font-size:12px}.table-wrap{max-height:770px;overflow:auto}table{border-collapse:collapse;width:100%;text-align:left}th{position:sticky;top:0;background:#edf0e7;z-index:1;font-weight:400;color:var(--muted);font-size:11px;padding:11px 10px;white-space:nowrap}th button{padding:0;color:inherit;border:0;background:none}td{padding:13px 10px;border-bottom:1px solid #e8ebdf;vertical-align:top}.row{cursor:pointer}.row:hover{background:#f1f5eb}.row.active{background:#e7efdf;box-shadow:inset 3px 0 var(--accent)}.stock-button{border:0;background:none;padding:0;text-align:left;font-weight:700;color:var(--ink);font-size:13px}.code{display:block;color:var(--muted);font-size:11px;margin-top:5px}.tag{display:inline-block;font-size:10px;background:#edf0e7;padding:3px 6px;border-radius:3px;margin:3px 3px 0 0;white-space:nowrap}.change-new,.change-initial{color:#225c46;background:#deebd8}.change-changed{color:#926c30;background:#f4e9ce}.change-retained{color:#6d796e;background:#eceee8}.down{color:var(--green)}.up{color:var(--red)}.warning{color:var(--amber)}.detail{background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--accent);border-radius:5px;padding:22px;min-width:0}.detailtop{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.detail h2{font-family:"Noto Serif SC","SimSun",serif;font-size:27px;margin:3px 0 6px;font-weight:600}.detailtop a{font-size:11px}.price{font:26px Georgia,serif;text-align:right;margin:4px 0}.price small{font-family:"Microsoft YaHei",sans-serif;font-size:10px;display:block;color:var(--muted);margin-top:5px}.metrics{display:grid;grid-template-columns:repeat(3,1fr);margin:18px 0;gap:0;border:1px solid var(--line);border-radius:3px}.metric{padding:12px 10px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}.metric:nth-child(3n){border-right:0}.metric:nth-child(n+4){border-bottom:0}.metric span{color:var(--muted);font-size:10px;display:block;margin-bottom:6px}.metric b{font:17px Consolas,monospace}.chartbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:5px}.chartbar strong{font-size:12px;margin-right:auto}.range{border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:3px;padding:4px 7px;font-size:10px}.range.active{background:var(--ink);color:white;border-color:var(--ink)}#chart{width:100%;display:block;overflow:visible}.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:10px;color:var(--muted);margin:8px 0}.legend i{display:inline-block;width:12px;height:2px;vertical-align:middle;margin-right:4px}.chart-info{font-size:10px;min-height:30px;line-height:1.7;color:var(--muted)}.section-title{margin:20px 0 9px;font-size:13px;display:flex;align-items:center;gap:7px}.section-title:before{content:"";height:11px;width:3px;background:var(--accent)}.reason{padding:10px 0;border-bottom:1px solid #e8ebdf;line-height:1.8;font-size:12px}.reason b{font-size:12px}.reason p{margin:4px 0 0;color:#627268}.risk{background:#f6efe1;padding:10px 12px;color:#866637;font-size:12px;line-height:1.9;border-radius:3px}.ma-line{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted)}.empty{padding:50px 24px;text-align:center;color:var(--muted);line-height:2}.notes{margin-top:24px;border-top:1px solid var(--line);padding-top:18px}details{padding:12px 0;border-bottom:1px solid var(--line)}summary{cursor:pointer;font-size:12px;font-weight:600}.removed-list{display:flex;flex-wrap:wrap;gap:10px;margin-top:15px}.method{font-size:12px;line-height:1.9;color:var(--muted);max-width:1000px}.footer{display:flex;justify-content:space-between;gap:20px;border-top:1px solid var(--line);margin-top:28px;padding-top:16px;font-size:10px;color:var(--muted)}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(min-width:1250px){.detail{position:sticky;top:16px}}@media(max-width:1050px){.workspace{grid-template-columns:1fr}.table-wrap{max-height:400px}.detail{padding:18px}}@media(max-width:600px){.mast{padding:14px 16px}.mast small{display:none}.page{padding:20px 14px}.hero{align-items:flex-start}.hero .btn{font-size:11px;white-space:nowrap}h1{font-size:30px}.hero p{font-size:11px}.stats{margin-top:18px}.stat{padding:12px 8px}.stat b{font-size:27px}.stat span{font-size:10px}.toolbar label{flex:1}.toolbar select{width:100%;max-width:none;min-width:0}.toolbar input{flex-basis:100%}.workspace{gap:15px}.table-wrap{overflow-x:auto}td,th{padding:10px 7px}.detail{padding:14px}.metric{padding:10px 7px}.metric span{font-size:9px}.metric b{font-size:14px}.detail h2{font-size:24px}.footer{flex-direction:column}.legend{gap:7px}}
+@media(max-width:600px){.hero{flex-direction:column;gap:8px}.hero .btn{align-self:flex-end}.toolbar label:not(.sr-only){flex:1 1 calc(50% - 9px);white-space:nowrap}.toolbar #reset{flex:1 1 calc(50% - 9px)}}
+.market-filters{border:1px solid var(--line);border-radius:5px;padding:14px 16px;background:#eeefe7;margin:0 0 18px}.filter-heading{display:flex;gap:15px;flex-wrap:wrap;font-size:12px;margin-bottom:12px}.market-controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center}.market-controls label{display:flex;gap:7px;align-items:center;font-size:12px;white-space:nowrap}.market-controls select{font:inherit;padding:9px;border:1px solid var(--line);border-radius:4px;color:var(--ink);background:var(--surface);min-width:100px}.filter-note{font-size:11px;margin:10px 0 0;line-height:1.8}.tag-market{color:#356654;background:#e5ecdf}.tag-risk{color:#a34131;background:#f5e2d9}.tag-unknown{color:#8c6d34;background:#f1e9d9}
+@media(max-width:600px){.market-controls label{width:100%}.market-controls select{flex:1;min-width:0}.market-controls .btn{flex:1;font-size:11px}.filter-heading{gap:6px}.market-filters{padding:12px}}
+.export-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.btn-primary{background:var(--accent);color:white;border-color:var(--accent)}.btn:disabled{opacity:.5;cursor:not-allowed}.export-help{font-size:11px;color:var(--muted);line-height:1.9}.export-help details{border:0;padding:9px 0 0}.export-help summary{font-size:11px;font-weight:400}.export-message{font-size:12px;min-height:18px;margin:6px 0 0}.export-message:empty{display:none}@media(max-width:600px){.export-actions{width:100%}.export-actions .btn{flex:1}}
+</style>
+</head>
+<body>
+<header class="mast"><div class="brand"><span class="mark" aria-hidden="true">Sx</span>SEQUOIA-X <small>量价观察 · 本地研究</small></div><span class="mono muted" id="edition"></span></header>
+<main class="page">
+<div class="hero"><div><div class="eyebrow">MARKET OBSERVATORY / 选股观察台</div><h1>把信号看清楚。</h1><p class="muted" id="subtitle"></p></div><div class="export-actions"><button class="btn" id="export">导出当前筛选 CSV ↓</button><button class="btn btn-primary" id="export-tdx">导出通达信自选股 ↓</button></div></div>
+<div class="export-help"><details><summary>如何导入通达信？</summary><p>先按板块、ST 等条件筛选，再导出 EBK 文件。在通达信电脑版按 Ctrl+D，进入“板块”，选中“自选股”或新建的自定义板块，点击“导入”，选择刚下载的 .EBK 文件。若出现追加/覆盖选项，按需要选择；追加可保留已有股票。</p><p>导出当前筛选后的全部股票（含列表滚动区域），保留当前排序并去重；文件只含市场标识和代码，名称由通达信显示。目前支持沪深主板、科创板、创业板及沪深B股；其他市场暂不生成文件并提示原因。</p><a href="https://zxfile.tdx.com.cn/zx/201612/3185123/3185123_fj.pdf" target="_blank" rel="noopener noreferrer">通达信官方操作说明 ↗</a></details></div>
+<p id="export-message" class="export-message" role="status" aria-live="polite"></p>
+<div class="stats" id="stats"></div>
+<div class="notice" id="notice"></div>
+<div class="toolbar">
+<label class="sr-only" for="search">搜索股票代码或名称</label><input id="search" type="search" placeholder="搜索股票代码 / 名称" autocomplete="off">
+<label>类型 <select id="category"><option value="">全部类型</option></select></label>
+<label>变化 <select id="status"><option value="">全部状态</option><option value="new">新增入选</option><option value="changed">明显变化</option><option value="retained">持续入选</option><option value="initial">首次观察</option></select></label>
+<label>排序 <select id="sort"><option value="priority">查看优先级</option><option value="pct">涨跌幅 ↓</option><option value="turnover">成交额 ↓</option><option value="rps">RPS ↓</option><option value="volume_ratio">相对成交量 ↓</option><option value="symbol">股票代码 ↑</option></select></label>
+<button id="reset" class="btn">重置</button>
+</div>
+<div class="market-filters" aria-label="市场与ST筛选">
+<div class="filter-heading"><strong>市场与风险标记</strong><span class="muted">交易所、板块、ST 状态可组合筛选</span></div>
+<div class="market-controls">
+<label>交易所 <select id="exchange"><option value="">全部交易所</option><option value="sh">上交所（含科创板）</option><option value="sz">深交所（含创业板）</option><option value="bj">北交所</option><option value="unknown">其他/待核对</option></select></label>
+<label>板块 <select id="board"><option value="">全部板块</option><option value="main">沪深主板</option><option value="sh_main">沪市主板</option><option value="sz_main">深市主板</option><option value="star">科创板</option><option value="chinext">创业板</option><option value="bse">北交所</option><option value="sh_b">沪市B股</option><option value="sz_b">深市B股</option><option value="unknown">其他/待核对</option></select></label>
+<label>ST 状态 <select id="st-filter"><option value="">全部状态</option><option value="normal">排除 ST / *ST / 待核对</option><option value="risk">只看 ST / *ST</option><option value="st">只看 ST</option><option value="star_st">只看 *ST</option><option value="unknown">名称缺失，待核对</option></select></label>
+<button class="btn" id="main-only">沪深主板 · 排除ST</button><button class="btn" id="exclude-st">全部板块 · 排除ST</button>
+</div><p class="muted filter-note" id="filter-note"></p>
+</div>
+<div class="workspace">
+<section class="list" aria-label="候选股票名单"><div class="listhead"><strong id="list-title">观察名单</strong><span class="muted" id="count" aria-live="polite"></span></div><div class="table-wrap"><table><thead><tr><th>股票 / 信号</th><th><button data-sort="pct">涨跌幅 ↓</button></th><th><button data-sort="rps">RPS ↓</button></th><th>变化</th></tr></thead><tbody id="rows"></tbody></table><div id="no-results" class="empty" hidden>没有符合当前条件的股票。<br>尝试切换类型或清空搜索。</div></div></section>
+<section id="detail" class="detail" aria-label="股票详情"></section>
+</div>
+<div class="notes"><details id="removed-section"><summary id="removed-title"></summary><p class="method">移出表示本次未再命中已执行的策略，不代表卖出指令。</p><div class="removed-list" id="removed"></div></details><details><summary>策略规则与指标口径</summary><div class="method" id="methods"></div></details></div>
+<footer class="footer"><span>Sequoia-X · 所有图表内嵌，可离线查看；外部行情链接需联网。</span><span id="generated"></span></footer>
+</main>
+<script id="report-data" type="application/json">__REPORT_DATA__</script>
+<script>__TDX_EXPORT_JS__</script>
+<script>
+"use strict";
+const report=JSON.parse(document.getElementById('report-data').textContent);
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const valid=x=>typeof x==='number'&&Number.isFinite(x);
+const num=(v,suffix='',sign=false)=>valid(v)?`${sign&&v>0?'+':''}${v.toFixed(2)}${suffix}`:'—';
+const money=v=>valid(v)?num(v/1e8,' 亿'):'—';
+const color=v=>valid(v)&&v!==0?(v>0?'up':'down'):'';
+const profileTags=r=>{const m=r.market||{};return `<span class="tag tag-market">${esc(m.board_name||'板块待核对')}</span><span class="tag ${['st','star_st'].includes(m.st_status)?'tag-risk':m.st_status==='unknown'?'tag-unknown':''}">${esc(m.st_label||'ST待核对')}</span>`;};
+const labels={initial:'首次',new:'新增',changed:'变化',retained:'持续'};
+let selected=null,filtered=[],chartRange=120;
+const categories=[...new Set(Object.values(report.strategies).map(s=>s.category))];
+$('category').innerHTML+=[...categories].map(c=>`<option>${esc(c)}</option>`).join('');
+$('edition').textContent=report.data_date||'无本地行情';
+$('subtitle').textContent=`${report.local_only?'本地数据模式':'串行同步模式'} · ${Object.keys(report.strategies).length} 项策略 · 按股票合并观察结果`;
+const configured=report.output_filter||{boards:[],exclude_st:false};
+const boardNames={sh_main:'沪市主板',sz_main:'深市主板',star:'科创板',chinext:'创业板',bse:'北交所',sh_b:'沪市B股',sz_b:'深市B股',unknown:'其他/待核对'};
+$('filter-note').textContent=`运行时输出范围：${configured.boards.length?configured.boards.map(b=>boardNames[b]).join('、'):'全部板块'}${configured.exclude_st?'，排除ST、*ST及名称缺失者':''}；原始去重候选 ${report.raw_count??report.records.length} 只，已过滤 ${report.excluded_count||0} 只。页面筛选只影响当前名单和导出文件，不会更改已发送的飞书。ST按缓存简称识别，不是行情日期的历史ST状态；名称缺失不会当作普通股。`;
+const n=change=>report.records.filter(r=>r.change===change).length;
+$('stats').innerHTML=[['去重候选',report.records.length],['新增入选',report.baseline?n('new'):'—'],['明显变化',report.baseline?n('changed'):'—'],['移出名单',report.baseline?report.removed.length:'—']].map(([a,b])=>`<div class="stat"><span>${a}</span><b>${b}</b></div>`).join('');
+$('notice').textContent=`行情截至 ${report.data_date||'未知'}；本地股票池 ${report.universe_count} 只，其中 ${report.fresh_count} 只在该日有记录。所有价格和K线均为后复权值，不能直接作为下单价格。${report.baseline?` 与上次报告 ${report.baseline.replace('T',' ')}（行情 ${report.baseline_date||'未知'}）比较。`:' 首次生成报告，尚无名单变化基准。'}`;
+$('removed-title').textContent=`移出名单 · ${report.removed.length} 只`;
+$('removed').innerHTML=report.removed.length?report.removed.map(r=>`<span class="tag">${esc(r.name||r.symbol)} <span class="mono">${esc(r.symbol)}</span></span>`).join(''):'<span class="muted">暂无移出记录</span>';
+$('methods').innerHTML=Object.values(report.strategies).map(s=>`<p><b>${esc(s.name)} · ${s.count} 只</b><br>${esc(s.description)}</p>`).join('')+`<p><b>排序：</b>数据日期落后或近120根日线存在至少35%相邻收盘跳变者后移，其余新增/变化优先，再按 RPS、成交额降序。此顺序用于安排查看，不是收益评分。多个相近策略命中不代表独立证据。</p><p><b>变化：</b>命中策略、数据新鲜度或风险提示改变；或涨跌幅较基准变化 ≥ 2 个百分点、相对成交量变化 ≥ 0.5 倍。仅日期前进不触发变化。</p><p><b>数据：</b>日线来自本地 SQLite。每只股票取最近180根用于计算，图表显示最多120根；RPS按全库最新日期、至少121根日线的 ${report.rps_universe_count} 只股票计算。相对成交量=当日成交量/此前20根日线均量，不是盘中量比。20日波动为最近20个日收益率的样本标准差。MA方向比较相邻两根日线的均线值。缺失值显示“—”。</p><p>展示各股最新有效记录，日期落后的股票单独提示；“未命中”不代表策略运行没有数据问题，信号尚未通过收益回测验证。</p>`;
+$('generated').textContent=`生成于 ${report.generated_at.replace('T',' ')}`;
+function renderList(){
+ const query=$('search').value.trim().toLowerCase(),category=$('category').value,status=$('status').value,sort=$('sort').value,exchange=$('exchange').value,board=$('board').value,st=$('st-filter').value;
+ filtered=report.records.filter(r=>(!query||`${r.symbol} ${r.name}`.toLowerCase().includes(query))&&(!category||r.categories.includes(category))&&(!status||r.change===status)&&(!exchange||r.market?.exchange===exchange)&&(!board||(board==='main'?['sh_main','sz_main'].includes(r.market?.board):r.market?.board===board))&&(!st||(st==='risk'?['st','star_st'].includes(r.market?.st_status):r.market?.st_status===st)));
+ if(sort==='symbol')filtered.sort((a,b)=>a.symbol.localeCompare(b.symbol));
+ else if(sort!=='priority')filtered.sort((a,b)=>(valid(b.metrics[sort])?b.metrics[sort]:-Infinity)-(valid(a.metrics[sort])?a.metrics[sort]:-Infinity)||a.symbol.localeCompare(b.symbol));
+ if(!filtered.some(r=>r.symbol===selected))selected=filtered[0]?.symbol||null;
+ $('count').textContent=`${filtered.length} / ${report.records.length} 只`;
+ $('export-tdx').disabled=filtered.length===0;
+ $('export-tdx').textContent=`导出通达信自选股 · ${filtered.length} 只 ↓`;
+ $('export-message').textContent='';
+ $('no-results').hidden=filtered.length!==0;
+ $('rows').innerHTML=filtered.map(r=>`<tr class="row ${r.symbol===selected?'active':''}" data-symbol="${esc(r.symbol)}"><td><button class="stock-button" data-symbol="${esc(r.symbol)}" aria-label="查看 ${esc(r.name||r.symbol)} 详情" aria-pressed="${r.symbol===selected}">${esc(r.name||r.symbol)}</button><span class="code mono">${esc(r.name?r.symbol:'名称未缓存')} ${r.stale?'· 数据待核对':(r.metrics.max_jump120||0)>=35?'· 价格跳变待核对':''}</span><div>${profileTags(r)}</div><div>${r.signals.map(s=>`<span class="tag">${esc(report.strategies[s].name)}</span>`).join('')}</div></td><td class="mono ${color(r.metrics.pct)}">${num(r.metrics.pct,'%',true)}</td><td class="mono">${num(r.metrics.rps)}</td><td><span class="tag change-${r.change}">${labels[r.change]}</span></td></tr>`).join('');
+ renderDetail();
+}
+function renderDetail(){
+ const r=report.records.find(r=>r.symbol===selected);
+ if(!r){$('detail').innerHTML='<div class="empty">选择一只股票，查看信号和走势图。<br>无候选时仍保留完整策略统计与变化记录。</div>';return;}
+ const m=r.metrics;
+ $('detail').innerHTML=`<div class="detailtop"><div><div class="eyebrow">${esc(r.category)} / ${esc(r.symbol)}</div><h2>${esc(r.name||r.symbol)}</h2><div>${profileTags(r)}</div><p class="muted" style="font-size:10px">${esc(r.market?.exchange_name||'交易所待核对')} · 名称采集 ${esc(r.market?.name_asof||'日期未知')}</p><div class="muted" style="font-size:11px">行情日期 ${esc(r.date||'无行情')} · <span class="${r.stale?'warning':''}">${r.stale?'数据日期待核对':'与全库最新日期一致'}</span></div></div><div><div class="price">${num(m.close)}<small>后复权收盘 · 非交易报价</small></div><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">雪球查看原始行情 ↗</a></div></div><div class="metrics">${[
+ ['当日涨跌幅',num(m.pct,'%',true),color(m.pct)],['成交额',money(m.turnover),''],['相对前20日均量',num(m.volume_ratio,' 倍'),''],['近10根日线涨幅',num(m.return10,'%',true),color(m.return10)],['距此前20日高点',num(m.breakout,'%',true),color(m.breakout)],['RPS · 120日',num(m.rps),'']
+ ].map(([label,value,cls])=>`<div class="metric"><span>${label}</span><b class="${cls}">${value}</b></div>`).join('')}</div><div class="chartbar"><strong>价格与成交量</strong>${[30,60,120].map(n=>`<button class="range ${n===chartRange?'active':''}" data-range="${n}" aria-pressed="${n===chartRange}">${n}根</button>`).join('')}</div><div class="legend"><span><i style="background:#ac8d40"></i>MA5</span><span><i style="background:#468d8c"></i>MA20</span><span><i style="background:#7e79a7"></i>MA60</span><span><i style="background:#93a18a"></i>此前20日高点</span><span>红涨 / 绿跌</span></div><svg id="chart" viewBox="0 0 760 330" role="img" aria-label="${esc(r.symbol)} 后复权K线、均线与成交量图"></svg><div class="chart-info mono" id="chart-info"></div><div class="ma-line">${[5,20,60].map(n=>`<span>MA${n} ${num(m['ma'+n])} · ${esc(m['ma'+n+'_direction']||'数据不足')}</span>`).join('')}<span>20日波动 ${num(m.volatility20,'%')}</span></div><h3 class="section-title">为什么入选</h3>${r.reasons.map(x=>`<div class="reason"><b>${esc(x.name)}</b><p>${esc(x.text)}</p></div>`).join('')}<h3 class="section-title">需要留意</h3><div class="risk">${r.warnings.length?r.warnings.map(esc).join('<br>'):'未触发内置提示；仍需结合基本面和市场环境判断。'}</div>${r.change_details.length?`<h3 class="section-title">与基准相比</h3><p class="method">${r.change_details.map(esc).join('；')}</p>`:''}`;
+ drawChart(r);
+}
+function drawChart(r){
+ const bars=r.chart.slice(-chartRange),svg=$('chart');
+ if(!bars.length){svg.innerHTML='<text x="380" y="160" text-anchor="middle" fill="#738078" font-size="14">暂无本地K线数据</text>';$('chart-info').textContent='此事件股票没有缓存的行情记录。';return;}
+ const values=bars.flatMap(b=>[b.low,b.high,b.ma5,b.ma20,b.ma60]).filter(valid);
+ if(!values.length){svg.innerHTML='';$('chart-info').textContent='行情价格缺失，无法绘图。';return;}
+ if(valid(r.metrics.prior_high20))values.push(r.metrics.prior_high20);
+ let lo=Math.min(...values),hi=Math.max(...values),pad=(hi-lo)*0.07||1;lo-=pad;hi+=pad;
+ const left=4,right=693,top=10,bottom=224,width=right-left,step=width/bars.length,x=i=>left+(i+.5)*step,y=v=>top+(hi-v)/(hi-lo)*(bottom-top),barWidth=Math.max(1,step*.62),vmax=Math.max(1,...bars.map(b=>b.volume||0));
+ let elements='';
+ for(let i=0;i<=4;i++){const v=lo+(hi-lo)*i/4,yy=y(v);elements+=`<line x1="${left}" y1="${yy}" x2="${right}" y2="${yy}" stroke="#e2e6db"/><text x="703" y="${yy+4}" fill="#84907f" font-size="10" font-family="Consolas">${num(v)}</text>`;}
+ bars.forEach((b,i)=>{if(![b.open,b.high,b.low,b.close].every(valid))return;const c=b.close>=b.open?'#b04435':'#25846a';elements+=`<line x1="${x(i)}" y1="${y(b.high)}" x2="${x(i)}" y2="${y(b.low)}" stroke="${c}"/><rect x="${x(i)-barWidth/2}" y="${Math.min(y(b.open),y(b.close))}" width="${barWidth}" height="${Math.max(1,Math.abs(y(b.open)-y(b.close)))}" fill="${c}"/><rect x="${x(i)-barWidth/2}" y="${300-(b.volume||0)/vmax*53}" width="${barWidth}" height="${(b.volume||0)/vmax*53}" fill="${c}" opacity=".55"/>`;});
+ [[5,'#ac8d40'],[20,'#468d8c'],[60,'#7e79a7']].forEach(([n,c])=>{let pen=false,path='';bars.forEach((b,i)=>{const value=b['ma'+n];if(valid(value)){path+=`${pen?'L':'M'}${x(i)},${y(value)} `;pen=true;}else pen=false;});elements+=`<path d="${path}" fill="none" stroke="${c}" stroke-width="1.4"/>`;});
+ const level=r.metrics.prior_high20;if(valid(level))elements+=`<line x1="${left}" y1="${y(level)}" x2="${right}" y2="${y(level)}" stroke="#93a18a" stroke-dasharray="4 4"/>`;
+ elements+=`<text x="5" y="243" fill="#84907f" font-size="10">成交量（股）</text><text x="703" y="257" fill="#84907f" font-size="10">${num(vmax/1e4)}万</text><line x1="4" y1="301" x2="693" y2="301" stroke="#dbe0d5"/>`;
+ [0,Math.floor((bars.length-1)/2),bars.length-1].forEach((i,j)=>{elements+=`<text x="${j===0?4:j===2?693:x(i)}" y="321" text-anchor="${j===0?'start':j===2?'end':'middle'}" font-size="10" fill="#84907f">${esc(bars[i].date)}</text>`;});
+ elements+='<line id="crosshair" x1="0" x2="0" y1="8" y2="300" stroke="#607b67" stroke-dasharray="2 3" visibility="hidden"/>';
+ bars.forEach((b,i)=>{elements+=`<rect data-candle="${i}" x="${left+i*step}" y="0" width="${step}" height="301" fill="transparent"><title>${esc(b.date)} 开 ${num(b.open)} 高 ${num(b.high)} 低 ${num(b.low)} 收 ${num(b.close)}</title></rect>`;});
+ svg.innerHTML=elements;
+ const inspect=i=>{const b=bars[i];$('chart-info').textContent=`${b.date}  开 ${num(b.open)}  高 ${num(b.high)}  低 ${num(b.low)}  收 ${num(b.close)}  量 ${num((b.volume||0)/1e4)}万股`;const line=$('crosshair');line.setAttribute('x1',x(i));line.setAttribute('x2',x(i));line.setAttribute('visibility','visible');};
+ inspect(bars.length-1);svg.onpointermove=e=>{const candle=e.target.closest('[data-candle]');if(candle)inspect(Number(candle.dataset.candle));};
+}
+$('rows').addEventListener('click',e=>{const row=e.target.closest('[data-symbol]');if(row){selected=row.dataset.symbol;renderList();}});
+$('detail').addEventListener('click',e=>{const b=e.target.closest('[data-range]');if(b){chartRange=Number(b.dataset.range);renderDetail();$('detail').querySelector(`[data-range="${chartRange}"]`).focus();}});
+['search','category','status','sort','exchange','board','st-filter'].forEach(id=>$(id).addEventListener(id==='search'?'input':'change',renderList));
+document.querySelectorAll('[data-sort]').forEach(b=>b.addEventListener('click',()=>{$('sort').value=b.dataset.sort;renderList();}));
+$('reset').onclick=()=>{['search','category','status','exchange','board','st-filter'].forEach(id=>$(id).value='');$('sort').value='priority';renderList();};
+$('main-only').onclick=()=>{$('reset').click();$('board').value='main';$('st-filter').value='normal';renderList();};
+$('exclude-st').onclick=()=>{$('reset').click();$('st-filter').value='normal';renderList();};
+$('export').onclick=()=>{const cell=x=>{let s=String(x??'');if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};const rows=[['代码','名称','交易所','板块','ST标记','名称采集日期','行情日期','状态','策略','后复权收盘','涨跌幅%','成交额元','相对前20日均量','RPS','风险提示'],...filtered.map(r=>[r.symbol,r.name,r.market?.exchange_name,r.market?.board_name,r.market?.st_label,r.market?.name_asof,r.date,labels[r.change],r.signals.map(s=>report.strategies[s].name).join(' / '),r.metrics.close,r.metrics.pct,r.metrics.turnover,r.metrics.volume_ratio,r.metrics.rps,r.warnings.join('；')])];const blob=new Blob(['\ufeff'+rows.map(row=>row.map(cell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`Sequoia-X-${report.data_date||'report'}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+$('export-tdx').onclick=()=>{
+ try {
+  const result=buildTdxEbk(filtered);
+  const filename=`Sequoia-X-${report.data_date||'report'}-${result.count}.EBK`;
+  const blob=new Blob([result.text],{type:'application/octet-stream'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  $('export-message').textContent=`已发起下载：${filename}，共 ${result.count} 只。请在通达信“板块 → 自选股 → 导入”中选择此文件。`;
+ } catch(error) { $('export-message').textContent=error.message; }
+};
+renderList();
+</script>
+</body>
+</html>

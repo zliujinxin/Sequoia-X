@@ -3,6 +3,7 @@
 import pandas as pd
 
 from sequoia_x.core.logger import get_logger
+from sequoia_x.data.baostock_session import baostock_session, pace_request, read_rows
 from sequoia_x.strategy.base import BaseStrategy
 
 logger = get_logger(__name__)
@@ -31,15 +32,13 @@ class TurtleTradeStrategy(BaseStrategy):
         """
         from datetime import date
 
-        import baostock as bs
-
         today_str = date.today().strftime("%Y-%m-%d")
         market_caps: dict[str, float] = {}
 
-        bs.login()
-        try:
+        with baostock_session() as bs:
             for symbol in symbols:
                 bs_code = self.engine._to_baostock_code(symbol)
+                pace_request()
                 rs = bs.query_history_k_data_plus(
                     bs_code,
                     "close,volume,turn",
@@ -48,8 +47,7 @@ class TurtleTradeStrategy(BaseStrategy):
                     frequency="d",
                     adjustflag="3",  # 不复权，真实价格
                 )
-                while rs.next():
-                    row = rs.get_row_data()
+                for row in read_rows(rs, f"查询 {symbol} 流通市值"):
                     try:
                         close = float(row[0])
                         volume = float(row[1])
@@ -59,8 +57,6 @@ class TurtleTradeStrategy(BaseStrategy):
                             market_caps[symbol] = circulating_shares * close
                     except (ValueError, ZeroDivisionError):
                         continue
-        finally:
-            bs.logout()
 
         return market_caps
 
@@ -103,7 +99,7 @@ class TurtleTradeStrategy(BaseStrategy):
                 continue
 
         # 按流通市值从大到小排序
-        if candidates:
+        if candidates and not self.settings.local_only:
             market_caps = self._get_market_caps(candidates)
             candidates.sort(key=lambda s: market_caps.get(s, 0), reverse=True)
 

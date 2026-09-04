@@ -1,5 +1,7 @@
 """配置管理模块：通过 pydantic-settings 从环境变量或 .env 文件加载系统配置。"""
 
+from pydantic import Field
+from typing import Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,6 +10,11 @@ class Settings(BaseSettings):
     start_date: str = "2024-01-01"
     feishu_webhook_url: str  # 必填字段，缺失时抛出 ValidationError
     strategy_webhooks: dict[str, str] = {}
+    local_only: bool = False
+    report_dir: str = "data/reports"
+    report_top_n: int = Field(default=5, ge=1, le=10)
+    include_boards: list[Literal["sh_main", "sz_main", "star", "chinext", "bse", "sh_b", "sz_b", "unknown"]] = Field(default_factory=list)
+    exclude_st: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",
