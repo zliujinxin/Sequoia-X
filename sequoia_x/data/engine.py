@@ -1,4 +1,4 @@
-"""数据引擎模块：负责 SQLite 行情数据存储与 baostock 增量同步。"""
+"""数据引擎模块：负责 SQLite 存储，并通过统一 Provider 同步行情。"""
 
 import sqlite3
 from datetime import date
@@ -9,7 +9,10 @@ import pandas as pd
 
 from sequoia_x.core.config import Settings
 from sequoia_x.core.logger import get_logger
-from sequoia_x.data.baostock_session import baostock_session, pace_request, read_rows
+from sequoia_x.data.baostock_session import baostock_session, pace_request
+from sequoia_x.data.providers.base import MarketDataProvider, StockRecord
+from sequoia_x.data.providers.baostock import BaostockProvider
+from sequoia_x.data.providers.factory import create_provider
 
 logger = get_logger(__name__)
 
@@ -35,11 +38,26 @@ CREATE INDEX IF NOT EXISTS idx_symbol_date ON stock_daily (symbol, date);
 
 
 class DataEngine:
-    """行情数据引擎，负责 SQLite 存储和 baostock 数据同步。"""
+    """行情数据引擎，负责 SQLite 存储和可替换的数据源同步。"""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, provider: MarketDataProvider | None = None) -> None:
         self.db_path: str = settings.db_path
         self.start_date: str = settings.start_date
+        # lambda 在调用时解析模块全局，保留原有测试/调用方对 engine 中函数的 patch 能力。
+        if provider is None and settings.data_provider != "baostock":
+            from sequoia_x.data.providers.base import ProviderError
+
+            raise ProviderError(
+                "easy_tdx 当前仅开放 --check-provider 影子校验；"
+                "尚未完成来源元数据迁移，不能写入现有正式行情表"
+            )
+        if provider is None:
+            provider = BaostockProvider(
+                adjustment=settings.data_adjustment,
+                session_factory=lambda: baostock_session(),
+                pace=lambda: pace_request(),
+            )
+        self.provider = provider or create_provider(settings)
         self._analysis_frame = None
         self._analysis_history = None
         self._init_db()
@@ -95,12 +113,6 @@ class DataEngine:
             )
         return df
 
-    @staticmethod
-    def _to_baostock_code(symbol: str) -> str:
-        """将纯数字代码转为 baostock 格式：6/9开头 -> sh，其余 -> sz。"""
-        prefix = "sh" if symbol.startswith(("6", "9")) else "sz"
-        return f"{prefix}.{symbol}"
-
     # ── 数据同步 ──
 
     def sync_today_bulk(self) -> int:
@@ -139,26 +151,15 @@ class DataEngine:
             logger.info("无待更新股票")
             return 0
 
-        logger.info(f"需要更新 {len(tasks)} 只股票，使用单连接串行拉取")
+        logger.info(
+            f"需要更新 {len(tasks)} 只股票，使用 {self.provider.name} "
+            f"单会话串行拉取（复权={self.provider.adjustment}）"
+        )
         count = 0
-        with baostock_session() as bs:
+        with self.provider.session() as session:
             for i, (symbol, start) in enumerate(tasks, 1):
-                pace_request()
-                rs = bs.query_history_k_data_plus(
-                    self._to_baostock_code(symbol),
-                    "date,open,high,low,close,volume,amount",
-                    start_date=start, end_date=today_str,
-                    frequency="d", adjustflag="1",
-                )
-                rows = read_rows(rs, f"查询 {symbol}")
-                if rows:
-                    df = pd.DataFrame(rows, columns=rs.fields)
-                    for col in ["open", "high", "low", "close", "volume", "amount"]:
-                        df[col] = pd.to_numeric(df[col], errors="coerce")
-                    df = df.dropna(subset=["close"])
-                    df = df[df["volume"] > 0]
-                    df["symbol"] = symbol
-                    df = df.rename(columns={"amount": "turnover"})
+                df = session.fetch_daily(symbol, start, today_str)
+                if not df.empty:
                     count += self._save_daily(df)
                 if i % 100 == 0 or i == len(tasks):
                     logger.info(f"同步进度 {i}/{len(tasks)}，已写入 {count} 条日线")
@@ -184,23 +185,20 @@ class DataEngine:
         return len(rows)
 
     def get_all_symbols(self) -> list[str]:
-        """通过 baostock 获取上市股票代码；失败时终止，而非返回空成功。"""
-        with baostock_session() as bs:
-            pace_request()
-            rs = bs.query_stock_basic(code_name="", code="")
-            rows = read_rows(rs, "查询股票列表")
-            self._save_stock_basic([dict(zip(rs.fields, row)) for row in rows])
-            symbols = []
-            for row in rows:
-                info = dict(zip(rs.fields, row))
-                if info["status"] == "1" and info["type"] == "1":
-                    symbols.append(info["code"].split(".")[1])
+        """通过当前 Provider 获取上市股票代码；失败时终止。"""
+        with self.provider.session() as session:
+            records = session.list_stocks()
+        self._save_stock_basic(records)
+        symbols = [record.symbol for record in records if record.active]
         logger.info(f"获取股票列表完成，共 {len(symbols)} 只")
         return symbols
 
-    def _save_stock_basic(self, records: list[dict]) -> None:
-        rows = [(r["code"].split(".")[-1], r["code_name"].strip(), date.today().isoformat())
-                for r in records if r.get("type") == "1" and r.get("code_name", "").strip()]
+    def _save_stock_basic(self, records: list[StockRecord]) -> None:
+        rows = [
+            (record.symbol, record.name.strip(), date.today().isoformat())
+            for record in records
+            if record.security_type == "stock" and record.name.strip()
+        ]
         with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.executemany("""INSERT INTO stock_basic(symbol, name, updated_at) VALUES (?, ?, ?)
                 ON CONFLICT(symbol) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at
@@ -217,11 +215,8 @@ class DataEngine:
 
     def refresh_stock_names(self) -> dict[str, str]:
         """单连接批量补齐名称，不查询日线；失败时保留原有名称。"""
-        with baostock_session() as bs:
-            pace_request()
-            rs = bs.query_stock_basic(code_name="", code="")
-            rows = read_rows(rs, "批量查询股票名称")
-            records = [dict(zip(rs.fields, row)) for row in rows]
+        with self.provider.session() as session:
+            records = session.list_stocks()
         self._save_stock_basic(records)
         return self.get_stock_names()
 

@@ -9,9 +9,9 @@
 Sequoia-X V2 是面向 A 股市场的量化选股系统，基于现代 Python 工程化标准从零重构。
 系统以 OOP 架构、向量化计算和增量数据更新为核心设计原则，每日收盘后自动选股并推送至飞书群。
 
-数据层使用 [baostock](http://baostock.com) 拉取历史及增量日 K 数据（后复权），
-存储于本地 SQLite。访问必须遵守 baostock 的每日请求限额与禁止并发连接规则；
-定增监控另使用 AKShare 的东方财富接口。
+数据层通过统一 Provider 接口拉取历史及增量日 K，存储于本地 SQLite。默认数据源仍是
+[baostock](http://baostock.com)（后复权），访问必须遵守其每日请求限额与禁止并发连接规则。
+已加入固定审计版本的 easy-tdx 候选源和只读影子校验；定增监控另使用 AKShare 的东方财富接口。
 
 ---
 
@@ -24,11 +24,34 @@ python main.py --local-only   # 使用本地行情生成报告并推送变化摘
 python main.py --local-only --no-notify  # 完全离线预览，不发送消息
 python main.py --local-only --force-notify # 无变化时也发送当前摘要
 python main.py --refresh-names # 只补股票名称并更新现有报告，不拉行情、不推送
+python main.py --check-provider easy_tdx # 抽样比较 easy-tdx，不改正式行情
 ```
 
 本地模式跳过在线定增策略、海龟候选股的市值查询与股票名称更新；名称使用已有缓存，
 没有缓存时显示代码。该模式仍会向配置的飞书机器人发送变化摘要。
 `--no-notify` 只关闭推送，需同时加上 `--local-only` 才不会请求数据源。
+
+### easy-tdx 影子校验
+
+easy-tdx 不属于默认依赖。只从已审计提交安装，不使用浮动 `main` 或同名 PyPI 包：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\install_easy_tdx.py
+.\.venv\Scripts\python.exe main.py --check-provider easy_tdx
+```
+
+安装脚本会核对提交归档 SHA-256、版本和 MIT 许可证，并处理上游缺失 `web-ui/dist` 导致的
+Git 安装失败，同时写入供运行时复核的来源标记；它不构建或启动 Web UI。每次执行
+`uv sync` 后若要继续使用候选源，请再运行一次安装脚本。校验默认从本地 SQLite 按板块和 ST 状态抽取 30 只
+股票，各比较最近 250 根日线，使用与正式库相同的 `hfq` 后复权口径。
+它只读取 `stock_daily`，结果写到 `data/reports/latest-provider-check.html` 和对应 JSON，
+不会更新行情、运行策略或发送飞书。可用 `--check-sample-size 50 --check-days 500` 调整范围。
+当前代码会拒绝用 `DATA_PROVIDER=easy_tdx` 写正式行情表，防止两种 HFQ 路径混在同一数据库；
+等后续加入来源、复权和抓取时间元数据后再开放生产切换。
+
+报告中的 PASS 表示日期覆盖、收盘价、成交量和成交额均在严格容差内；WARN 表示存在可解释
+差异或疑似单位问题；FAIL 表示数据为空、重合不足、价格差异超过 2% 或连接失败。通过一次
+抽样校验只说明该样本和时点可用，正式切换仍需连续观察。
 
 ### 按板块与 ST 过滤
 
@@ -169,7 +192,7 @@ python main.py
 
 ```
 Sequoia-X/
-├── main.py                      # 入口：argparse 分发日常/回填模式
+├── main.py                      # 入口：日常、回填、本地和影子校验模式
 ├── pyproject.toml               # 依赖声明 + ruff/pytest 配置
 ├── .env.example                 # 环境变量模板
 ├── data/                        # SQLite 数据库（运行时生成，不入 git）
@@ -178,6 +201,8 @@ Sequoia-X/
 │   │   ├── config.py            # Pydantic-settings 配置管理
 │   │   └── logger.py            # rich 结构化日志
 │   ├── data/
+│   │   ├── providers/           # 数据源接口、Baostock 与 easy-tdx 适配器
+│   │   ├── quality.py           # 候选源 HTML/JSON 影子校验
 │   │   └── engine.py            # 数据引擎（baostock 回填 + 增量同步 + SQLite）
 │   ├── strategy/
 │   │   ├── base.py              # 策略抽象基类
@@ -196,14 +221,15 @@ Sequoia-X/
 同步安全、报告计算和通知状态回归测试无需联网，可直接运行：
 
 ```bash
-python -m unittest tests.test_baostock_safety tests.test_reporting tests.test_stock_profile
+python -m unittest tests.test_market_data_provider tests.test_baostock_safety tests.test_reporting tests.test_stock_profile
 ```
 
 ---
 
 ## 数据说明
 
-- **数据源**：[baostock](http://baostock.com)（有请求限额，禁止并发连接）
+- **正式数据源**：[baostock](http://baostock.com)（默认；有请求限额，禁止并发连接）
+- **候选数据源**：[zliujinxin/easy-tdx](https://github.com/zliujinxin/easy-tdx) 固定提交 `7c9e19de...`，当前只建议先做影子校验
 - **复权方式**：后复权（hfq）— 历史价格不变，适合增量存储，避免除权导致数据错乱
 - **存储**：本地 SQLite（`data/sequoia_v2.db`），可直接拷贝到其他机器使用
 - **日常增量**：单连接串行拉取，逐只股票提交，按股票代码与日期更新，保留同日其他股票数据

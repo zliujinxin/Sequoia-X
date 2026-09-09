@@ -17,6 +17,7 @@ def make_settings(webhook_url: str = "https://example.com/default") -> Settings:
         db_path="data/test.db",
         start_date="2024-01-01",
         feishu_webhook_url=webhook_url,
+        local_only=True,  # 通知单元测试不得为名称查询访问 baostock
     )
 
 

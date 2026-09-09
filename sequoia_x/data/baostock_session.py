@@ -4,10 +4,12 @@ from contextlib import contextmanager
 import time
 
 import baostock as bs
+
+from sequoia_x.data.providers.base import ProviderError
 from baostock.common import context
 
 
-class BaostockError(RuntimeError):
+class BaostockError(ProviderError):
     """数据源拒绝请求或发生网络错误。"""
 
 

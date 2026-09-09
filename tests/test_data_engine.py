@@ -2,6 +2,7 @@
 
 import sqlite3
 import tempfile
+from contextlib import closing
 from datetime import date
 from pathlib import Path
 
@@ -40,7 +41,7 @@ def test_unique_symbol_date_constraint(symbol: str, trade_date: date) -> None:
             "volume": 1000.0, "turnover": 10500.0,
         }
         df = pd.DataFrame([row])
-        with sqlite3.connect(engine.db_path) as conn:
+        with closing(sqlite3.connect(engine.db_path)) as conn, conn:
             df.to_sql("stock_daily", conn, if_exists="append", index=False, method="multi")
             try:
                 df.to_sql("stock_daily", conn, if_exists="append", index=False, method="multi")

@@ -8,6 +8,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     db_path: str = "data/sequoia_v2.db"
     start_date: str = "2024-01-01"
+    data_provider: Literal["baostock", "easy_tdx"] = "baostock"
+    data_adjustment: Literal["none", "qfq", "hfq"] = "hfq"
+    data_fallback_provider: Literal["baostock", "easy_tdx"] | None = None
+    easy_tdx_host: str | None = None
+    easy_tdx_mac_host: str | None = None
+    easy_tdx_port: int | None = Field(default=None, ge=1, le=65535)
+    easy_tdx_timeout: float = Field(default=10.0, gt=0, le=60)
+    provider_check_sample_size: int = Field(default=30, ge=1, le=100)
+    provider_check_days: int = Field(default=250, ge=30, le=2000)
     feishu_webhook_url: str  # 必填字段，缺失时抛出 ValidationError
     strategy_webhooks: dict[str, str] = {}
     local_only: bool = False

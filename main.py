@@ -4,6 +4,7 @@
   python main.py               # 串行增量更新 + 策略 + 飞书推送
   python main.py --backfill    # 串行回填历史行情
   python main.py --local-only  # 使用本地行情选股并推送，不请求行情数据源
+  python main.py --check-provider easy_tdx  # 影子比较，不写正式行情
 """
 
 import argparse
@@ -19,7 +20,8 @@ from sequoia_x.core.config import get_settings
 from sequoia_x.core.stock_profile import BOARDS
 from sequoia_x.core.logger import get_logger
 from sequoia_x.data.engine import DataEngine
-from sequoia_x.data.baostock_session import BaostockError
+from sequoia_x.data.providers import ProviderError, create_provider
+from sequoia_x.data.quality import ProviderQualityChecker
 from sequoia_x.notify.feishu import FeishuNotifier
 from sequoia_x.reporting.service import ReportService
 from sequoia_x.strategy.base import BaseStrategy
@@ -39,8 +41,15 @@ def main() -> None:
     modes.add_argument(
         "--backfill",
         action="store_true",
-        help="回填模式：通过 baostock 单连接串行拉取历史 K 线",
+        help="回填模式：通过配置的数据源单会话串行拉取历史 K 线",
     )
+    modes.add_argument(
+        "--check-provider",
+        choices=["easy_tdx"],
+        help="影子校验候选行情源；只读本地正式行情，不写 stock_daily",
+    )
+    parser.add_argument("--check-sample-size", type=int, help="影子校验股票样本数（1-100）")
+    parser.add_argument("--check-days", type=int, help="每只股票最多比较的最近日线数（30-2000）")
     parser.add_argument("--no-notify", action="store_true", help="生成本地报告，不发送飞书消息")
     parser.add_argument("--force-notify", action="store_true", help="即使名单无明显变化，也发送当前摘要")
     parser.add_argument("--boards", nargs="+", choices=list(BOARDS), help="只输出这些板块：sh_main沪主板 sz_main深主板 star科创 chinext创业 bse北交所；不改变RPS计算池")
@@ -65,7 +74,37 @@ def main() -> None:
         logger.info("Sequoia-X V2 启动")
 
         # 3. 初始化数据引擎
-        engine = DataEngine(settings)
+        reference_settings = settings
+        if args.check_provider:
+            reference_settings = settings.model_copy(update={"data_provider": "baostock"})
+        engine = DataEngine(reference_settings)
+
+        if args.check_provider:
+            sample_size = args.check_sample_size or settings.provider_check_sample_size
+            days = args.check_days or settings.provider_check_days
+            if not 1 <= sample_size <= 100:
+                parser.error("--check-sample-size 必须在 1 到 100 之间")
+            if not 30 <= days <= 2000:
+                parser.error("--check-days 必须在 30 到 2000 之间")
+            candidate_settings = settings.model_copy(update={"data_provider": args.check_provider})
+            provider = create_provider(candidate_settings)
+            logger.info(
+                f"开始影子校验：候选源={provider.name}，复权={provider.adjustment}，"
+                f"样本={sample_size}，日线={days}"
+            )
+            checker = ProviderQualityChecker(engine, provider, settings.report_dir)
+            report = checker.run(sample_size=sample_size, days=days)
+            html_path, json_path = checker.write(report)
+            summary = report["summary"]
+            logger.info(
+                f"影子校验完成：PASS={summary['pass']} WARN={summary['warn']} "
+                f"FAIL={summary['fail']}"
+            )
+            logger.info(f"HTML 报告：{html_path}")
+            logger.info(f"JSON 报告：{json_path}")
+            if report["sample_size"] == 0:
+                raise ProviderError("影子校验没有产生可比较样本")
+            return
 
         if args.refresh_names:
             count = ReportService(engine, settings).refresh_names()
@@ -125,7 +164,7 @@ def main() -> None:
             logger.error("报告已保存，但部分飞书摘要发送失败；下次运行将再次尝试")
             sys.exit(1)
 
-    except BaostockError as exc:
+    except ProviderError as exc:
         get_logger(__name__).error(str(exc))
         sys.exit(1)
     except Exception:
