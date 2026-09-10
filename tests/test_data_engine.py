@@ -52,3 +52,26 @@ def test_unique_symbol_date_constraint(symbol: str, trade_date: date) -> None:
                 (symbol, str(trade_date)),
             ).fetchone()[0]
         assert count == 1
+
+
+def test_prepare_analysis_ignores_newer_partial_trading_day() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        engine, _ = make_engine_in(tmp_dir)
+        rows = []
+        for symbol in ["000001", "000002", "600001", "600002"]:
+            rows.append({"symbol": symbol, "date": "2026-09-03", "open": 10,
+                         "high": 11, "low": 9, "close": 10, "volume": 1000,
+                         "turnover": 10000})
+        for symbol in ["000001", "000002"]:
+            rows.append({"symbol": symbol, "date": "2026-09-04", "open": 10,
+                         "high": 11, "low": 9, "close": 10, "volume": 1000,
+                         "turnover": 10000})
+        engine._save_daily(pd.DataFrame(rows))
+
+        engine.prepare_analysis()
+
+        assert engine.analysis_date == "2026-09-03"
+        assert engine.analysis_coverage["count"] == 4
+        assert engine.analysis_coverage["latest_available_count"] == 2
+        assert set(engine.get_local_symbols()) == {"000001", "000002", "600001", "600002"}
+        assert engine.get_analysis_frame()["date"].max() == "2026-09-03"

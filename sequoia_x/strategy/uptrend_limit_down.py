@@ -3,6 +3,7 @@
 import pandas as pd
 
 from sequoia_x.core.logger import get_logger
+from sequoia_x.core.stock_profile import daily_price_limit_ratio
 from sequoia_x.strategy.base import BaseStrategy
 
 logger = get_logger(__name__)
@@ -13,8 +14,8 @@ class UptrendLimitDownStrategy(BaseStrategy):
 
     选股条件（向量化，严禁 iterrows）：
     1. 处于上升趋势：昨日20日均线 > 昨日60日均线
-    2. 放量跌停：今日 close <= 昨日 close * 0.905
-                且今日 volume > 20日均量的 2.0 倍
+    2. 放量接近跌停：按主板/双创/北交所/ST对应限制，保留0.5个百分点容差
+                     且今日 volume > 20日均量的 2.0 倍
 
     Attributes:
         webhook_key: 路由到 'limit_down' 专属飞书机器人。
@@ -31,6 +32,7 @@ class UptrendLimitDownStrategy(BaseStrategy):
             满足条件的股票代码列表。
         """
         symbols = self.engine.get_local_symbols()
+        names = self.engine.get_stock_names()
         selected: list[str] = []
 
         for symbol in symbols:
@@ -52,8 +54,9 @@ class UptrendLimitDownStrategy(BaseStrategy):
 
                 # 条件 1：上升趋势（昨日均线多头排列）
                 uptrend = prev["ma20"] > prev["ma60"]
-                # 条件 2：放量跌停
-                limit_down = today["close"] <= prev["close"] * 0.905
+                # 条件 2：放量达到所属板块的近似跌停阈值
+                limit_ratio = daily_price_limit_ratio(symbol, names.get(symbol, ""))
+                limit_down = today["close"] / prev["close"] - 1 <= -(limit_ratio - 0.005)
                 volume_surge = today["volume"] > today["vol_ma20"] * 2.0
 
                 if uptrend and limit_down and volume_surge:

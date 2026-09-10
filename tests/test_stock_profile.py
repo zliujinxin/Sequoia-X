@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from sequoia_x.core.config import Settings
-from sequoia_x.core.stock_profile import stock_profile
+from sequoia_x.core.stock_profile import daily_price_limit_ratio, stock_profile
 from sequoia_x.notify.feishu import FeishuNotifier
 from sequoia_x.reporting.service import ReportService, compare, snapshot
 from tests import test_reporting
@@ -37,6 +37,13 @@ class ProfileTests(unittest.TestCase):
     def test_invalid_board_config_rejected(self):
         with self.assertRaises(ValueError):
             Settings(_env_file=None, feishu_webhook_url="https://example.invalid", include_boards=["typo"])
+
+    def test_daily_price_limit_ratio_uses_board_and_st_rules(self):
+        self.assertEqual(daily_price_limit_ratio("600000", "浦发银行"), 0.10)
+        self.assertEqual(daily_price_limit_ratio("688001", "华兴源创"), 0.20)
+        self.assertEqual(daily_price_limit_ratio("300750", "宁德时代"), 0.20)
+        self.assertEqual(daily_price_limit_ratio("920001", "北交样本"), 0.30)
+        self.assertEqual(daily_price_limit_ratio("688001", "*ST样本"), 0.05)
 
 
 class OutputFilterTests(unittest.TestCase):

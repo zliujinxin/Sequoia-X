@@ -3,6 +3,7 @@
 import pandas as pd
 
 from sequoia_x.core.logger import get_logger
+from sequoia_x.core.stock_profile import daily_price_limit_ratio
 from sequoia_x.strategy.base import BaseStrategy
 
 logger = get_logger(__name__)
@@ -12,7 +13,7 @@ class LimitUpShakeoutStrategy(BaseStrategy):
     """涨停洗盘策略。
 
     选股条件（向量化，严禁 iterrows）：
-    1. 昨日涨停：昨日 close >= 前日 close * 1.095
+    1. 昨日接近涨停：按主板/双创/北交所/ST对应限制，保留0.5个百分点容差
     2. 今日收阴：今日 close < 今日 open
     3. 今日放量：今日 volume > 昨日 volume * 2.0
     4. 支撑不破：今日 low >= 昨日 close
@@ -32,6 +33,7 @@ class LimitUpShakeoutStrategy(BaseStrategy):
             满足条件的股票代码列表。
         """
         symbols = self.engine.get_local_symbols()
+        names = self.engine.get_stock_names()
         selected: list[str] = []
 
         for symbol in symbols:
@@ -45,8 +47,11 @@ class LimitUpShakeoutStrategy(BaseStrategy):
                 prev1 = df.iloc[-2]  # 昨日
                 today = df.iloc[-1]  # 今日
 
-                # 条件 1：昨日涨停
-                limit_up_yesterday = prev1["close"] >= prev2["close"] * 1.095
+                # 条件 1：昨日达到所属板块的近似涨停阈值
+                limit_ratio = daily_price_limit_ratio(symbol, names.get(symbol, ""))
+                limit_up_yesterday = (
+                    prev1["close"] / prev2["close"] - 1 >= limit_ratio - 0.005
+                )
                 # 条件 2：今日收阴
                 bearish_today = today["close"] < today["open"]
                 # 条件 3：今日放量

@@ -236,7 +236,11 @@ class ReportService:
             "output_filter": filters, "raw_count": raw_count, "excluded_count": raw_count - len(hits),
             "baseline": previous.get("generated_at") if previous else None,
             "baseline_date": previous.get("data_date") if previous else None,
-            "universe_count": len(dates), "fresh_count": int((dates == latest).sum()),
+            "analysis_coverage": self.engine.analysis_coverage,
+            "universe_count": int(self.engine.analysis_coverage.get("peak_count", len(dates))),
+            "fresh_count": int(self.engine.analysis_coverage.get(
+                "count", int((dates == latest).sum())
+            )),
             "rps_universe_count": len(ranks), "strategies": {
                 key: {**STRATEGIES[key], "count": len(set(symbols)), "raw_count": len(set(results[key]))} for key, symbols in filtered_results.items()
             },

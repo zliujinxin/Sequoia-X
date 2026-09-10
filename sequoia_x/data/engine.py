@@ -1,8 +1,9 @@
 """数据引擎模块：负责 SQLite 存储，并通过统一 Provider 同步行情。"""
 
+import math
 import sqlite3
-from datetime import date
 from contextlib import closing
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -43,6 +44,7 @@ class DataEngine:
     def __init__(self, settings: Settings, provider: MarketDataProvider | None = None) -> None:
         self.db_path: str = settings.db_path
         self.start_date: str = settings.start_date
+        self.analysis_min_coverage: float = settings.analysis_min_coverage
         # lambda 在调用时解析模块全局，保留原有测试/调用方对 engine 中函数的 patch 能力。
         if provider is None and settings.data_provider != "baostock":
             from sequoia_x.data.providers.base import ProviderError
@@ -60,23 +62,76 @@ class DataEngine:
         self.provider = provider or create_provider(settings)
         self._analysis_frame = None
         self._analysis_history = None
+        self._analysis_date: str | None = None
+        self._analysis_coverage: dict[str, int | float | str | None] = {}
         self._init_db()
 
     def prepare_analysis(self) -> None:
-        """一次性读取每只股票最近 180 根日线，供所有策略和报告共用同一快照。"""
+        """选择最近的高覆盖交易日，并读取截至该日的统一行情快照。
+
+        数据同步过程中，较新的日期可能只有部分股票已经写入。若直接使用每只
+        股票各自的最后一根日线，会把多个交易日混在同一次选股中。这里以历史
+        单日最大覆盖数为基准，选择最近一个达到最低覆盖率的日期，并排除该日
+        没有行情的股票。
+        """
         with closing(sqlite3.connect(self.db_path)) as conn:
+            coverage_rows = conn.execute(
+                """SELECT date, COUNT(DISTINCT symbol) AS symbol_count
+                   FROM stock_daily GROUP BY date ORDER BY date DESC"""
+            ).fetchall()
+            if not coverage_rows:
+                self._analysis_frame = pd.DataFrame()
+                self._analysis_history = {}
+                self._analysis_date = None
+                self._analysis_coverage = {}
+                return
+
+            peak_count = max(int(row[1]) for row in coverage_rows)
+            minimum_count = math.ceil(peak_count * self.analysis_min_coverage)
+            analysis_date, coverage_count = next(
+                (str(day), int(count))
+                for day, count in coverage_rows
+                if int(count) >= minimum_count
+            )
             frame = pd.read_sql_query(
                 """SELECT symbol, date, open, high, low, close, volume, turnover FROM (
                     SELECT *, ROW_NUMBER() OVER (
                         PARTITION BY symbol ORDER BY date DESC
                     ) AS row_num FROM stock_daily
+                    WHERE date <= ?
                 ) WHERE row_num <= 180 ORDER BY symbol, date""", conn,
+                params=(analysis_date,),
             )
+        if not frame.empty:
+            current_symbols = frame.groupby("symbol")["date"].transform("max") == analysis_date
+            frame = frame[current_symbols].reset_index(drop=True)
         self._analysis_frame = frame
         self._analysis_history = {
             symbol: group.reset_index(drop=True)
             for symbol, group in frame.groupby("symbol", sort=False)
         }
+        self._analysis_date = analysis_date
+        self._analysis_coverage = {
+            "date": analysis_date,
+            "count": coverage_count,
+            "peak_count": peak_count,
+            "minimum_count": minimum_count,
+            "ratio": coverage_count / peak_count if peak_count else 0.0,
+            "latest_available_date": str(coverage_rows[0][0]),
+            "latest_available_count": int(coverage_rows[0][1]),
+        }
+        logger.info(
+            f"分析基准日 {analysis_date}：覆盖 {coverage_count}/{peak_count} 只 "
+            f"({coverage_count / peak_count:.1%})"
+        )
+
+    @property
+    def analysis_date(self) -> str | None:
+        return self._analysis_date
+
+    @property
+    def analysis_coverage(self) -> dict[str, int | float | str | None]:
+        return dict(self._analysis_coverage)
 
     def get_analysis_frame(self) -> pd.DataFrame:
         if self._analysis_frame is None:
@@ -169,6 +224,8 @@ class DataEngine:
         """只更新匹配的股票和日期，保留同日其他股票；每批事务提交。"""
         self._analysis_frame = None
         self._analysis_history = None
+        self._analysis_date = None
+        self._analysis_coverage = {}
         columns = ["symbol", "date", "open", "high", "low", "close", "volume", "turnover"]
         rows = list(df[columns].itertuples(index=False, name=None))
         with closing(sqlite3.connect(self.db_path)) as conn, conn:

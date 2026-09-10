@@ -5,6 +5,7 @@
   python main.py --backfill    # 串行回填历史行情
   python main.py --local-only  # 使用本地行情选股并推送，不请求行情数据源
   python main.py --check-provider easy_tdx  # 影子比较，不写正式行情
+  python main.py --serve        # 启动本地观察台与个股缠论查询
 """
 
 import argparse
@@ -48,6 +49,9 @@ def main() -> None:
         choices=["easy_tdx"],
         help="影子校验候选行情源；只读本地正式行情，不写 stock_daily",
     )
+    modes.add_argument("--serve", action="store_true", help="启动本地观察台与个股缠论查询")
+    parser.add_argument("--port", type=int, default=8765, help="本地页面端口（默认 8765）")
+    parser.add_argument("--no-browser", action="store_true", help="启动页面服务后不自动打开浏览器")
     parser.add_argument("--check-sample-size", type=int, help="影子校验股票样本数（1-100）")
     parser.add_argument("--check-days", type=int, help="每只股票最多比较的最近日线数（30-2000）")
     parser.add_argument("--no-notify", action="store_true", help="生成本地报告，不发送飞书消息")
@@ -72,6 +76,14 @@ def main() -> None:
         # 2. 初始化日志
         logger = get_logger(__name__)
         logger.info("Sequoia-X V2 启动")
+
+        if args.serve:
+            if not 1 <= args.port <= 65535:
+                parser.error("--port 必须在 1 到 65535 之间")
+            from sequoia_x.web import run_server
+
+            run_server(settings, port=args.port, open_browser=not args.no_browser)
+            return
 
         # 3. 初始化数据引擎
         reference_settings = settings

@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     local_only: bool = False
     report_dir: str = "data/reports"
     report_top_n: int = Field(default=5, ge=1, le=10)
+    analysis_min_coverage: float = Field(default=0.95, gt=0, le=1)
     include_boards: list[Literal["sh_main", "sz_main", "star", "chinext", "bse", "sh_b", "sz_b", "unknown"]] = Field(default_factory=list)
     exclude_st: bool = False
 

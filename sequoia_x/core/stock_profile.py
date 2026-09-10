@@ -43,6 +43,20 @@ def stock_profile(symbol, name, name_asof=None):
             "st_label": ST_LABELS[state], "name_asof": name_asof}
 
 
+def daily_price_limit_ratio(symbol, name=""):
+    """返回当前A股日涨跌幅限制比例，供形态策略使用。
+
+    项目历史行情始于2024年，因此这里采用当前板块规则。名称缺失时无法识别
+    ST，按所属板块的普通股票比例处理，并由报告继续标记名称缺失风险。
+    """
+    profile = stock_profile(symbol, name)
+    if profile["st_status"] in {"st", "star_st"}:
+        return 0.05
+    return {"star": 0.20, "chinext": 0.20, "bse": 0.30}.get(
+        profile["board"], 0.10
+    )
+
+
 def output_filter(settings):
     return {"boards": sorted(set(settings.include_boards)), "exclude_st": settings.exclude_st}
 

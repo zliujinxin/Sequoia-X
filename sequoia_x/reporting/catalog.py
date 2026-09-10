@@ -15,11 +15,11 @@ STRATEGIES = {
     },
     "LimitUpShakeoutStrategy": {
         "name": "大涨后放量收阴", "key": "shakeout", "category": "整理观察",
-        "description": "昨日涨幅 ≥ 9.5%；今日收阴、量 > 昨日2倍，最低价 ≥ 昨收。形态不能证明洗盘。",
+        "description": "昨日涨幅达到所属板块涨停幅度减0.5个百分点；今日收阴、量 > 昨日2倍，最低价 ≥ 昨收。形态不能证明洗盘。",
     },
     "UptrendLimitDownStrategy": {
         "name": "趋势股异常大跌", "key": "limit_down", "category": "异常大跌",
-        "description": "昨日 MA20 > MA60；今日跌幅 ≥ 9.5%，量 > 含今日20日均量的2倍。未验证反包。",
+        "description": "昨日 MA20 > MA60；今日跌幅达到所属板块跌停幅度减0.5个百分点，量 > 含今日20日均量的2倍。未验证反包。",
     },
     "RpsBreakoutStrategy": {
         "name": "RPS 强势", "key": "rps", "category": "趋势突破",
