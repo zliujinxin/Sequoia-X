@@ -23,7 +23,7 @@ from sequoia_x.reporting.service import write_atomic
 
 logger = get_logger(__name__)
 
-MARKET_STRATEGIES = [
+BASELINE_STRATEGIES = [
     "MaVolumeStrategy",
     "TurtleTradeStrategy",
     "HighTightFlagStrategy",
@@ -31,6 +31,11 @@ MARKET_STRATEGIES = [
     "UptrendLimitDownStrategy",
     "RpsBreakoutStrategy",
 ]
+RESEARCH_STRATEGIES = [
+    "MaVolumeV2Strategy",
+    "HighTightFlagBreakoutV2Strategy",
+]
+MARKET_STRATEGIES = BASELINE_STRATEGIES + RESEARCH_STRATEGIES
 
 
 def _rolling(grouped: Any, column: str, window: int, function: str) -> pd.Series:
@@ -84,16 +89,23 @@ def _summary(values: pd.DataFrame) -> dict[str, Any]:
     }
 
 
-def _evidence_label(metrics: dict[str, Any]) -> str:
-    count = metrics["observations"]
-    median = metrics["median_excess_pct"]
-    beat = metrics["beat_market_pct"]
-    mean = metrics["mean_excess_pct"]
-    if count < 100:
+def _positive_evidence(metrics: dict[str, Any]) -> bool:
+    return (
+        metrics["median_excess_pct"] is not None
+        and metrics["median_excess_pct"] > 0
+        and metrics["beat_market_pct"] is not None
+        and metrics["beat_market_pct"] > 50
+    )
+
+
+def _evidence_label(
+    development: dict[str, Any], holdout: dict[str, Any]
+) -> str:
+    if development["observations"] < 100 or holdout["observations"] < 100:
         return "样本不足"
-    if median is not None and beat is not None and median > 0 and beat > 50:
+    if _positive_evidence(development) and _positive_evidence(holdout):
         return "初步正向"
-    if mean is not None and mean > 0:
+    if _positive_evidence(development) or _positive_evidence(holdout):
         return "结果分化"
     return "暂未证明"
 
@@ -139,6 +151,14 @@ class StrategyValidationService:
         minimum_count = math.ceil(peak_count * self.settings.analysis_min_coverage)
         complete_dates = coverage[coverage >= minimum_count].index
         complete_mask = data["date"].isin(complete_dates)
+        complete_timestamps = pd.to_datetime(complete_dates)
+        latest_year = int(complete_timestamps.max().year)
+        latest_year_dates = complete_dates[complete_timestamps.year == latest_year]
+        if len(latest_year_dates) >= 120:
+            holdout_start = str(latest_year_dates.min())
+        else:
+            split_position = max(1, math.floor(len(complete_dates) * 0.8))
+            holdout_start = str(complete_dates[split_position])
 
         grouped = data.groupby("symbol", sort=False)
         data["bar_index"] = grouped.cumcount()
@@ -155,6 +175,21 @@ class StrategyValidationService:
         prior_high20 = grouped["high"].shift(1).groupby(data["symbol"]).rolling(
             20, min_periods=20
         ).max().reset_index(level=0, drop=True)
+        prior_high40 = grouped["high"].shift(1).groupby(data["symbol"]).rolling(
+            40, min_periods=40
+        ).max().reset_index(level=0, drop=True)
+        prior_low40 = grouped["low"].shift(1).groupby(data["symbol"]).rolling(
+            40, min_periods=40
+        ).min().reset_index(level=0, drop=True)
+        prior_high10 = grouped["high"].shift(1).groupby(data["symbol"]).rolling(
+            10, min_periods=10
+        ).max().reset_index(level=0, drop=True)
+        prior_low10 = grouped["low"].shift(1).groupby(data["symbol"]).rolling(
+            10, min_periods=10
+        ).min().reset_index(level=0, drop=True)
+        prior_volume10 = grouped["volume"].shift(1).groupby(data["symbol"]).rolling(
+            10, min_periods=10
+        ).mean().reset_index(level=0, drop=True)
         high40 = _rolling(grouped, "high", 40, "max")
         low40 = _rolling(grouped, "low", 40, "min")
         high10 = _rolling(grouped, "high", 10, "max")
@@ -164,6 +199,16 @@ class StrategyValidationService:
             level=0, drop=True
         )
         rps = return120.groupby(data["date"]).rank(pct=True) * 100
+        return20 = data["close"] / grouped["close"].shift(20) - 1
+        breadth_above_ma20 = (data["close"] > ma20).where(complete_mask).groupby(
+            data["date"]
+        ).transform("mean")
+        market_median_return20 = return20.where(complete_mask).groupby(
+            data["date"]
+        ).transform("median")
+        favorable_market = (
+            (breadth_above_ma20 >= 0.55) & (market_median_return20 > 0)
+        )
 
         names = self.engine.get_stock_names()
         ratios = {
@@ -175,6 +220,10 @@ class StrategyValidationService:
             symbol: stock_profile(symbol, names.get(symbol, ""))
             for symbol in data["symbol"].unique()
         }
+        board_names = {
+            symbol: profile["board_name"] for symbol, profile in profiles.items()
+        }
+        data["board_name"] = data["symbol"].map(board_names)
         allowed = {
             symbol for symbol, profile in profiles.items()
             if matches_output_filter(profile, self.settings)
@@ -185,11 +234,18 @@ class StrategyValidationService:
             f"输出股票池 {len(allowed)} 只"
         )
 
+        ma_volume_signal = (
+            ma5.groupby(data["symbol"]).shift(1)
+            < ma20.groupby(data["symbol"]).shift(1)
+        ) & (ma5 > ma20) & (data["volume"] > volume20 * 1.5)
+        high_tight_setup = (
+            (prior_high40 / prior_low40 > 1.6)
+            & (prior_high10 / prior_low10 < 1.15)
+            & (prior_low10 >= prior_high40 * 0.8)
+            & (prior_volume10 < prior_volume20 * 0.75)
+        )
         signals = {
-            "MaVolumeStrategy": (
-                ma5.groupby(data["symbol"]).shift(1)
-                < ma20.groupby(data["symbol"]).shift(1)
-            ) & (ma5 > ma20) & (data["volume"] > volume20 * 1.5),
+            "MaVolumeStrategy": ma_volume_signal,
             "TurtleTradeStrategy": (
                 (data["close"] > prior_high20)
                 & (data["turnover"] > 100_000_000)
@@ -215,7 +271,34 @@ class StrategyValidationService:
                 & (data["volume"] > volume20 * 2)
             ),
             "RpsBreakoutStrategy": (rps >= 90) & (data["close"] >= high120 * 0.90),
+            "MaVolumeV2Strategy": (
+                ma_volume_signal
+                & favorable_market
+                & (data["close"] > ma60)
+                & (ma20 > ma20.groupby(data["symbol"]).shift(5))
+                & (rps >= 70)
+                & (data["turnover"] >= 50_000_000)
+                & (data["close"] <= ma20 * 1.10)
+            ),
+            "HighTightFlagBreakoutV2Strategy": (
+                high_tight_setup
+                & favorable_market
+                & (data["close"] > prior_high10)
+                & (data["close"] > data["open"])
+                & (data["volume"] > prior_volume20 * 1.2)
+                & (data["turnover"] >= 50_000_000)
+                & (rps >= 80)
+            ),
         }
+
+        regime_by_date = pd.DataFrame(
+            {
+                "date": data["date"],
+                "breadth": breadth_above_ma20,
+                "median_return20": market_median_return20,
+                "favorable": favorable_market,
+            }
+        ).loc[complete_mask].drop_duplicates("date")
 
         next_open = grouped["open"].shift(-1)
         next_date = grouped["date"].shift(-1)
@@ -230,8 +313,13 @@ class StrategyValidationService:
             strategy_result: dict[str, Any] = {
                 "name": STRATEGIES[strategy_name]["name"],
                 "description": STRATEGIES[strategy_name]["description"],
+                "stage": "研究候选" if strategy_name in RESEARCH_STRATEGIES else "现有基准",
                 "horizons": {},
                 "years": {},
+                "boards": {},
+                "regimes": {},
+                "development": {},
+                "holdout": {},
             }
             base_signal = signals[strategy_name].fillna(False) & complete_mask & output_mask
             for horizon in horizons:
@@ -251,13 +339,16 @@ class StrategyValidationService:
                 ).groupby(data["date"]).transform("mean")
                 observations = data.loc[
                     base_signal & valid_return,
-                    ["symbol", "date", "bar_index"],
+                    ["symbol", "date", "bar_index", "board_name"],
                 ].copy()
                 observations["return"] = net_return.loc[observations.index]
                 observations["excess"] = (
                     net_return.loc[observations.index]
                     - market_return.loc[observations.index]
                 )
+                observations["favorable_market"] = favorable_market.loc[
+                    observations.index
+                ]
                 observations = _non_overlapping(observations, horizon)
                 metrics = _summary(observations)
                 strategy_result["horizons"][str(horizon)] = metrics
@@ -268,7 +359,29 @@ class StrategyValidationService:
                         str(year): _summary(group)
                         for year, group in observations.groupby(years)
                     }
-                    strategy_result["evidence"] = _evidence_label(metrics)
+                    strategy_result["boards"] = {
+                        str(board): _summary(group)
+                        for board, group in observations.groupby("board_name")
+                    }
+                    strategy_result["regimes"] = {
+                        "市场有利": _summary(
+                            observations[observations["favorable_market"]]
+                        ),
+                        "市场不利": _summary(
+                            observations[~observations["favorable_market"]]
+                        ),
+                    }
+                    development = _summary(
+                        observations[observations["date"] < holdout_start]
+                    )
+                    holdout = _summary(
+                        observations[observations["date"] >= holdout_start]
+                    )
+                    strategy_result["development"] = development
+                    strategy_result["holdout"] = holdout
+                    strategy_result["evidence"] = _evidence_label(
+                        development, holdout
+                    )
             result[strategy_name] = strategy_result
 
         result["PrivatePlacementStrategy"] = {
@@ -278,6 +391,10 @@ class StrategyValidationService:
             "reason": "本地数据库没有历史定增事件快照，不能用日线反推当时可见事件。",
             "horizons": {},
             "years": {},
+            "boards": {},
+            "regimes": {},
+            "development": {},
+            "holdout": {},
         }
         latest_horizon = str(max(horizons))
         positive_count = sum(
@@ -288,7 +405,7 @@ class StrategyValidationService:
             for item in result.values()
         )
         return {
-            "schema": 1,
+            "schema": 2,
             "generated_at": datetime.now().isoformat(timespec="seconds"),
             "database": str(Path(self.engine.db_path).resolve()),
             "source_rows": len(data),
@@ -298,12 +415,15 @@ class StrategyValidationService:
             "complete_start": str(complete_dates.min()),
             "complete_end": str(complete_dates.max()),
             "complete_days": len(complete_dates),
+            "holdout_start": holdout_start,
             "coverage_peak": peak_count,
             "coverage_minimum": minimum_count,
             "coverage_ratio": self.settings.analysis_min_coverage,
             "horizons": list(horizons),
             "primary_horizon": int(latest_horizon),
             "strategy_count": len(MARKET_STRATEGIES),
+            "baseline_count": len(BASELINE_STRATEGIES),
+            "research_count": len(RESEARCH_STRATEGIES),
             "positive_count": positive_count,
             "total_observations": total_observations,
             "filters": {
@@ -315,6 +435,17 @@ class StrategyValidationService:
                 "stamp_duty_on_sell": self.stamp_duty_rate,
                 "slippage_each_side": self.slippage_rate,
             },
+            "market_regime": {
+                "definition": "全市场收盘高于MA20的股票比例不低于55%，且20日收益中位数为正",
+                "favorable_days": int(regime_by_date["favorable"].sum()),
+                "favorable_pct": _number(regime_by_date["favorable"].mean() * 100, 2),
+                "latest_date": str(regime_by_date.iloc[-1]["date"]),
+                "latest_favorable": bool(regime_by_date.iloc[-1]["favorable"]),
+                "latest_breadth_pct": _number(regime_by_date.iloc[-1]["breadth"] * 100, 2),
+                "latest_median_return20_pct": _number(
+                    regime_by_date.iloc[-1]["median_return20"] * 100
+                ),
+            },
             "strategies": result,
             "limitations": [
                 "这是逐日事件验证，不是多股票组合回测，因此不计算组合最大回撤。",
@@ -323,6 +454,7 @@ class StrategyValidationService:
                 "股票简称只保存当前状态，无法准确还原历史日期的ST状态。",
                 "股票池来自本地回填记录，仍可能存在退市股票缺失造成的存活偏差。",
                 "定增策略缺少逐日事件快照，本报告不伪造其历史回测。",
+                f"证据标签以 {holdout_start} 起的留出期为核心，并要求此前开发期与留出期同时为正；研究候选未进入正式选股。",
             ],
         }
 

@@ -25,10 +25,18 @@ STRATEGIES = {
         "name": "RPS 强势", "key": "rps", "category": "趋势突破",
         "description": "本地股票池中120根日线收益排名 RPS ≥ 90；收盘 ≥ 120日最高价的90%。接近高位不等于突破。",
     },
+    "MaVolumeV2Strategy": {
+        "name": "均线放量 V2", "key": "ma_volume_v2", "category": "研究候选",
+        "description": "均线放量基础条件，加市场宽度、20日趋势、MA60、RPS、流动性和追高距离过滤。仅参与历史验证。",
+    },
+    "HighTightFlagBreakoutV2Strategy": {
+        "name": "高位整理突破 V2", "key": "flag_breakout_v2", "category": "研究候选",
+        "description": "先确认高位收敛缩量，再要求当日放量突破10日平台，并通过市场环境、RPS和流动性过滤。仅参与历史验证。",
+    },
     "PrivatePlacementStrategy": {
         "name": "定增事件", "key": "private_placement", "category": "事件提醒",
         "description": "增发数据中发行方式为定向增发，发行日期不早于当前日期减7个自然日。按发行日期筛选，非公告日。",
     },
 }
 
-CATEGORIES = ["趋势突破", "整理观察", "异常大跌", "事件提醒"]
+CATEGORIES = ["趋势突破", "整理观察", "异常大跌", "研究候选", "事件提醒"]

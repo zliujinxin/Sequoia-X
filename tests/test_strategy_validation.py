@@ -51,9 +51,15 @@ def test_validation_uses_next_open_and_writes_reviewable_report() -> None:
 
         assert report["complete_days"] == 155
         assert report["source_symbols"] == 3
+        assert report["research_count"] == 2
+        assert report["market_regime"]["latest_date"] == dates[-1]
         assert turtle["observations"] >= 1
         assert turtle["median_return_pct"] > 0
         assert turtle["median_excess_pct"] > 0
+        turtle_report = report["strategies"]["TurtleTradeStrategy"]
+        assert turtle_report["boards"]
+        assert set(turtle_report["regimes"]) == {"市场有利", "市场不利"}
+        assert report["strategies"]["MaVolumeV2Strategy"]["stage"] == "研究候选"
 
         html_path, json_path = service.write(report)
         assert html_path.exists()
