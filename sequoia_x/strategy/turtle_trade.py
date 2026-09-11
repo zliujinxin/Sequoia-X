@@ -3,7 +3,6 @@
 import pandas as pd
 
 from sequoia_x.core.logger import get_logger
-from sequoia_x.data.baostock_session import baostock_session, pace_request, read_rows
 from sequoia_x.strategy.base import BaseStrategy
 
 logger = get_logger(__name__)
@@ -24,48 +23,13 @@ class TurtleTradeStrategy(BaseStrategy):
     webhook_key: str = "turtle"
     _MIN_BARS: int = 21  # 至少需要 21 根 K 线（20日窗口 + 当日）
 
-    def _get_market_caps(self, symbols: list[str]) -> dict[str, float]:
-        """通过 baostock 查询候选股票的流通市值（不复权收盘价 × 流通股本）。
-
-        流通股本 = 成交量 / (换手率% / 100)
-        流通市值 = 流通股本 × 不复权收盘价
-        """
-        from datetime import date
-
-        today_str = date.today().strftime("%Y-%m-%d")
-        market_caps: dict[str, float] = {}
-
-        with baostock_session() as bs:
-            for symbol in symbols:
-                bs_code = self.engine._to_baostock_code(symbol)
-                pace_request()
-                rs = bs.query_history_k_data_plus(
-                    bs_code,
-                    "close,volume,turn",
-                    start_date=today_str,
-                    end_date=today_str,
-                    frequency="d",
-                    adjustflag="3",  # 不复权，真实价格
-                )
-                for row in read_rows(rs, f"查询 {symbol} 流通市值"):
-                    try:
-                        close = float(row[0])
-                        volume = float(row[1])
-                        turn = float(row[2])
-                        if turn > 0:
-                            circulating_shares = volume / (turn / 100)
-                            market_caps[symbol] = circulating_shares * close
-                    except (ValueError, ZeroDivisionError):
-                        continue
-
-        return market_caps
-
     def run(self) -> list[str]:
         """
         遍历全市场，返回满足海龟突破条件的股票代码列表。
         """
         symbols = self.engine.get_local_symbols()
         candidates: list[str] = []
+        candidate_turnovers: dict[str, float] = {}
 
         for symbol in symbols:
             try:
@@ -93,15 +57,14 @@ class TurtleTradeStrategy(BaseStrategy):
 
                 if breakout and liquid and is_yang and is_up:
                     candidates.append(symbol)
+                    candidate_turnovers[symbol] = float(last["turnover"])
 
             except Exception as exc:
                 logger.warning(f"[{symbol}] TurtleTradeStrategy 计算失败：{exc}")
                 continue
 
-        # 按流通市值从大到小排序
-        if candidates and not self.settings.local_only:
-            market_caps = self._get_market_caps(candidates)
-            candidates.sort(key=lambda s: market_caps.get(s, 0), reverse=True)
+        # 使用同一分析快照中的成交额排序，避免选股阶段再次请求 baostock。
+        candidates.sort(key=lambda s: candidate_turnovers.get(s, 0), reverse=True)
 
         logger.info(f"TurtleTradeStrategy 选出 {len(candidates)} 只股票")
         return candidates
