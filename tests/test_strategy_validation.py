@@ -4,8 +4,10 @@ import tempfile
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from sequoia_x.backtest import StrategyValidationService
+from sequoia_x.backtest.strategy_validation import _ranked_portfolio_periods
 from sequoia_x.core.config import Settings
 from sequoia_x.data.engine import DataEngine
 
@@ -51,7 +53,8 @@ def test_validation_uses_next_open_and_writes_reviewable_report() -> None:
 
         assert report["complete_days"] == 155
         assert report["source_symbols"] == 3
-        assert report["research_count"] == 3
+        assert report["schema"] == 3
+        assert report["research_count"] == 4
         assert report["market_regime"]["latest_date"] == dates[-1]
         assert turtle["observations"] >= 1
         assert turtle["median_return_pct"] > 0
@@ -62,6 +65,10 @@ def test_validation_uses_next_open_and_writes_reviewable_report() -> None:
         assert report["strategies"]["MaVolumeV2Strategy"]["stage"] == "研究候选"
         assert report["research_policy"]["composite_daily_top_n"] == 20
         assert "CompositeTrendRankStrategy" in report["strategies"]
+        price_quality = report["strategies"]["PriceQualityMultiFactorV1Strategy"]
+        assert price_quality["stage"] == "研究候选"
+        assert "portfolio" in price_quality
+        assert report["research_policy"]["price_quality_v1"]["exit_rank"] == 40
 
         html_path, json_path = service.write(report)
         assert html_path.exists()
@@ -87,3 +94,37 @@ def test_validation_rejects_invalid_horizon() -> None:
             assert "1到120" in str(exc)
         else:
             raise AssertionError("无效持有周期应被拒绝")
+
+
+def test_ranked_portfolio_uses_next_open_and_weekly_execution() -> None:
+    dates = pd.bdate_range("2026-01-05", periods=13).strftime("%Y-%m-%d")
+    rows = []
+    for index, day in enumerate(dates):
+        price = 11.0 if index >= 6 else 10.0
+        rows.append(
+            {
+                "symbol": "000001",
+                "date": day,
+                "open": price,
+                "close": price,
+                "quality_rank": 1.0,
+                "quality_pool": True,
+                "quality_market": True,
+                "board_name": "深市主板",
+                "output_allowed": True,
+            }
+        )
+
+    periods, holdings = _ranked_portfolio_periods(
+        pd.DataFrame(rows),
+        pd.Index(dates),
+        commission_rate=0.0003,
+        stamp_duty_rate=0.0005,
+        slippage_rate=0.0005,
+    )
+
+    assert periods.iloc[0]["signal_date"] == dates[0]
+    assert periods.iloc[0]["execution_date"] == dates[1]
+    assert periods.iloc[0]["exit_date"] == dates[6]
+    assert periods.iloc[0]["return"] == pytest.approx((1 - 0.0008) * 1.1 - 1)
+    assert holdings == ["000001"]

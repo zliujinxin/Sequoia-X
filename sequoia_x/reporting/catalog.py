@@ -35,7 +35,19 @@ STRATEGIES = {
     },
     "CompositeTrendRankStrategy": {
         "name": "多因子趋势排名", "key": "composite_trend_rank", "category": "研究候选",
-        "description": "在价格高于MA20、MA20高于MA60且20日平均成交额不低于5000万元的股票中，按120/60/20日动量、趋势强度、低波动和流动性综合评分，每日只取前20名。仅参与历史验证。",
+        "description": (
+            "在价格高于MA20、MA20高于MA60且20日平均成交额不低于5000万元的股票中，"
+            "按120/60/20日动量、趋势强度、低波动和流动性综合评分，每日只取前20名。"
+            "仅参与历史验证。"
+        ),
+    },
+    "PriceQualityMultiFactorV1Strategy": {
+        "name": "价格质量多因子 V1", "key": "price_quality_v1", "category": "研究候选",
+        "description": (
+            "用中期动量、趋势连续性、下行波动、回撤韧性、流动性和成交稳定性评分，"
+            "扣除短期过热；通过市场过滤后每周持有前20名，跌出前40名再卖出。"
+            "仅参与历史验证。"
+        ),
     },
     "PrivatePlacementStrategy": {
         "name": "定增事件", "key": "private_placement", "category": "事件提醒",

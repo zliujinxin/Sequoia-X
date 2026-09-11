@@ -35,8 +35,13 @@ RESEARCH_STRATEGIES = [
     "MaVolumeV2Strategy",
     "HighTightFlagBreakoutV2Strategy",
     "CompositeTrendRankStrategy",
+    "PriceQualityMultiFactorV1Strategy",
 ]
 MARKET_STRATEGIES = BASELINE_STRATEGIES + RESEARCH_STRATEGIES
+
+QUALITY_ENTRY_RANK = 20
+QUALITY_EXIT_RANK = 40
+QUALITY_REBALANCE_DAYS = 5
 
 
 def _rolling(grouped: Any, column: str, window: int, function: str) -> pd.Series:
@@ -109,6 +114,226 @@ def _evidence_label(
     if _positive_evidence(development) or _positive_evidence(holdout):
         return "结果分化"
     return "暂未证明"
+
+
+def _portfolio_summary(periods: pd.DataFrame) -> dict[str, Any]:
+    """汇总按调仓周期记录的组合收益。"""
+
+    if periods.empty:
+        return {
+            "periods": 0,
+            "total_return_pct": None,
+            "benchmark_return_pct": None,
+            "excess_return_pct": None,
+            "annualized_return_pct": None,
+            "annualized_volatility_pct": None,
+            "sharpe": None,
+            "max_drawdown_pct": None,
+            "positive_period_pct": None,
+            "average_holdings": None,
+            "average_turnover_pct": None,
+        }
+    returns = periods["return"].astype(float).fillna(0.0)
+    benchmark = periods["benchmark_return"].astype(float).fillna(0.0)
+    equity = (1 + returns).cumprod()
+    benchmark_equity = (1 + benchmark).cumprod()
+    drawdown = equity / equity.cummax() - 1
+    periods_per_year = 252 / QUALITY_REBALANCE_DAYS
+    annualized_return = equity.iloc[-1] ** (periods_per_year / len(periods)) - 1
+    volatility = returns.std(ddof=0) * math.sqrt(periods_per_year)
+    sharpe = (
+        returns.mean() / returns.std(ddof=0) * math.sqrt(periods_per_year)
+        if returns.std(ddof=0) > 0
+        else None
+    )
+    return {
+        "periods": len(periods),
+        "total_return_pct": _number((equity.iloc[-1] - 1) * 100),
+        "benchmark_return_pct": _number((benchmark_equity.iloc[-1] - 1) * 100),
+        "excess_return_pct": _number(
+            (equity.iloc[-1] / benchmark_equity.iloc[-1] - 1) * 100
+        ),
+        "annualized_return_pct": _number(annualized_return * 100),
+        "annualized_volatility_pct": _number(volatility * 100),
+        "sharpe": _number(sharpe),
+        "max_drawdown_pct": _number(drawdown.min() * 100),
+        "positive_period_pct": _number((returns > 0).mean() * 100, 2),
+        "average_holdings": _number(periods["holdings"].mean(), 1),
+        "average_turnover_pct": _number(periods["turnover"].mean() * 100, 2),
+    }
+
+
+def _portfolio_evidence(
+    development: dict[str, Any], holdout: dict[str, Any]
+) -> str:
+    if development["periods"] < 24 or holdout["periods"] < 12:
+        return "样本不足"
+    development_positive = (
+        development["excess_return_pct"] is not None
+        and development["excess_return_pct"] > 0
+        and development["sharpe"] is not None
+        and development["sharpe"] > 0
+    )
+    holdout_positive = (
+        holdout["excess_return_pct"] is not None
+        and holdout["excess_return_pct"] > 0
+        and holdout["sharpe"] is not None
+        and holdout["sharpe"] > 0
+    )
+    if development_positive and holdout_positive:
+        return "初步正向"
+    if development_positive or holdout_positive:
+        return "结果分化"
+    return "暂未证明"
+
+
+def _ranked_portfolio_periods(
+    data: pd.DataFrame,
+    complete_dates: pd.Index,
+    *,
+    commission_rate: float,
+    stamp_duty_rate: float,
+    slippage_rate: float,
+) -> tuple[pd.DataFrame, list[str]]:
+    """按收盘排名、下一交易日开盘成交，模拟每周等权组合。"""
+
+    columns = [
+        "open",
+        "close",
+        "quality_rank",
+        "quality_pool",
+        "quality_market",
+        "board_name",
+        "output_allowed",
+    ]
+    lookup = data.set_index(["date", "symbol"])[columns].sort_index()
+    dates = [str(value) for value in complete_dates]
+    current_weights: dict[str, float] = {}
+    periods: list[dict[str, Any]] = []
+    latest_holdings: list[str] = []
+
+    for signal_position in range(
+        0, len(dates) - QUALITY_REBALANCE_DAYS - 1, QUALITY_REBALANCE_DAYS
+    ):
+        signal_date = dates[signal_position]
+        execution_date = dates[signal_position + 1]
+        exit_date = dates[signal_position + 1 + QUALITY_REBALANCE_DAYS]
+        try:
+            signal_frame = lookup.xs(signal_date, level="date")
+            execution_frame = lookup.xs(execution_date, level="date")
+            exit_frame = lookup.xs(exit_date, level="date")
+        except KeyError:
+            continue
+
+        candidates = signal_frame[
+            signal_frame["quality_pool"].fillna(False)
+            & signal_frame["output_allowed"].fillna(False)
+            & signal_frame["quality_rank"].notna()
+        ].sort_values("quality_rank")
+        market_open = bool(signal_frame["quality_market"].fillna(False).any())
+        if candidates.empty and not current_weights:
+            continue
+
+        target: list[str] = []
+        if market_open:
+            board_count = max(1, candidates["board_name"].nunique())
+            board_cap = (
+                QUALITY_ENTRY_RANK
+                if board_count == 1
+                else max(
+                    math.ceil(QUALITY_ENTRY_RANK / board_count),
+                    math.ceil(QUALITY_ENTRY_RANK * 0.4),
+                )
+            )
+            selected_by_board: dict[str, int] = {}
+
+            retained = candidates[
+                candidates.index.isin(current_weights)
+                & candidates["quality_rank"].le(QUALITY_EXIT_RANK)
+            ]
+            for symbol, row in retained.iterrows():
+                board = str(row["board_name"])
+                if selected_by_board.get(board, 0) >= board_cap:
+                    continue
+                target.append(str(symbol))
+                selected_by_board[board] = selected_by_board.get(board, 0) + 1
+
+            for symbol, row in candidates.iterrows():
+                symbol = str(symbol)
+                if symbol in target:
+                    continue
+                board = str(row["board_name"])
+                if selected_by_board.get(board, 0) >= board_cap:
+                    continue
+                target.append(symbol)
+                selected_by_board[board] = selected_by_board.get(board, 0) + 1
+                if len(target) >= QUALITY_ENTRY_RANK:
+                    break
+
+        target = [
+            symbol
+            for symbol in target
+            if symbol in execution_frame.index
+            and pd.notna(execution_frame.at[symbol, "open"])
+            and float(execution_frame.at[symbol, "open"]) > 0
+        ]
+        target_weights = (
+            {symbol: 1 / len(target) for symbol in target} if target else {}
+        )
+        all_symbols = set(current_weights) | set(target_weights)
+        buy_turnover = sum(
+            max(0.0, target_weights.get(symbol, 0.0) - current_weights.get(symbol, 0.0))
+            for symbol in all_symbols
+        )
+        sell_turnover = sum(
+            max(0.0, current_weights.get(symbol, 0.0) - target_weights.get(symbol, 0.0))
+            for symbol in all_symbols
+        )
+        transaction_cost = (
+            buy_turnover * (commission_rate + slippage_rate)
+            + sell_turnover * (commission_rate + stamp_duty_rate + slippage_rate)
+        )
+
+        holding_returns: list[float] = []
+        for symbol in target:
+            entry_open = float(execution_frame.at[symbol, "open"])
+            if symbol in exit_frame.index and pd.notna(exit_frame.at[symbol, "open"]):
+                exit_open = float(exit_frame.at[symbol, "open"])
+                if exit_open > 0:
+                    holding_returns.append(exit_open / entry_open - 1)
+                    continue
+            holding_returns.append(0.0)
+        gross_return = float(np.mean(holding_returns)) if holding_returns else 0.0
+        net_return = (1 - transaction_cost) * (1 + gross_return) - 1
+
+        benchmark_frame = execution_frame[
+            execution_frame["output_allowed"].fillna(False)
+            & execution_frame["open"].gt(0)
+        ][["open"]].join(
+            exit_frame[["open"]].rename(columns={"open": "exit_open"}), how="inner"
+        )
+        benchmark_frame = benchmark_frame[benchmark_frame["exit_open"].gt(0)]
+        benchmark_return = (
+            float((benchmark_frame["exit_open"] / benchmark_frame["open"] - 1).mean())
+            if not benchmark_frame.empty
+            else 0.0
+        )
+        periods.append(
+            {
+                "signal_date": signal_date,
+                "execution_date": execution_date,
+                "exit_date": exit_date,
+                "return": net_return,
+                "benchmark_return": benchmark_return,
+                "holdings": len(target),
+                "turnover": (buy_turnover + sell_turnover) / 2,
+                "market_open": market_open,
+            }
+        )
+        current_weights = target_weights
+        latest_holdings = target
+
+    return pd.DataFrame(periods), latest_holdings
 
 
 class StrategyValidationService:
@@ -269,6 +494,80 @@ class StrategyValidationService:
             f"输出股票池 {len(allowed)} 只"
         )
 
+        # 价格质量多因子 V1：先用本地已有的日线和成交额验证框架。
+        # 财务质量与行业中性化必须等逐日财务快照、行业历史分类补齐后再加入。
+        return120_skip20 = grouped["close"].shift(20) / grouped["close"].shift(120) - 1
+        return60_skip5 = grouped["close"].shift(5) / grouped["close"].shift(60) - 1
+        return5 = data["close"] / grouped["close"].shift(5) - 1
+        positive_ratio60 = daily_return.gt(0).astype(float).groupby(
+            data["symbol"]
+        ).rolling(60, min_periods=60).mean().reset_index(level=0, drop=True)
+        downside_deviation60 = daily_return.clip(upper=0).groupby(
+            data["symbol"]
+        ).rolling(60, min_periods=60).std().reset_index(level=0, drop=True)
+        close_high120 = grouped["close"].rolling(
+            120, min_periods=120
+        ).max().reset_index(level=0, drop=True)
+        drawdown_resilience = data["close"] / close_high120
+        turnover_std20 = grouped["turnover"].rolling(
+            20, min_periods=20
+        ).std().reset_index(level=0, drop=True)
+        turnover_stability = turnover_std20 / turnover20.replace(0, np.nan)
+
+        def cross_rank(values: pd.Series, *, ascending: bool = True) -> pd.Series:
+            return values.where(complete_mask).groupby(data["date"]).rank(
+                pct=True, ascending=ascending
+            )
+
+        quality_components = {
+            "momentum_120_skip_20": cross_rank(return120_skip20),
+            "momentum_60_skip_5": cross_rank(return60_skip5),
+            "trend_consistency": cross_rank(positive_ratio60),
+            "low_downside_volatility": cross_rank(
+                downside_deviation60, ascending=False
+            ),
+            "drawdown_resilience": cross_rank(drawdown_resilience),
+            "liquidity": cross_rank(turnover20),
+            "turnover_stability": cross_rank(
+                turnover_stability, ascending=False
+            ),
+        }
+        quality_raw_score = (
+            quality_components["momentum_120_skip_20"] * 0.25
+            + quality_components["momentum_60_skip_5"] * 0.20
+            + quality_components["trend_consistency"] * 0.15
+            + quality_components["low_downside_volatility"] * 0.15
+            + quality_components["drawdown_resilience"] * 0.10
+            + quality_components["liquidity"] * 0.10
+            + quality_components["turnover_stability"] * 0.05
+            - cross_rank(return5) * 0.05
+        )
+        quality_global_score = cross_rank(quality_raw_score)
+        quality_board_score = quality_raw_score.where(complete_mask).groupby(
+            [data["date"], data["board_name"]]
+        ).rank(pct=True)
+        quality_score = quality_global_score * 0.8 + quality_board_score * 0.2
+        quality_market = (
+            (breadth_above_ma20 >= 0.50) & (market_median_return20 >= -0.02)
+        )
+        quality_pool = (
+            (data["close"] >= 3)
+            & (data["close"] > ma20)
+            & (ma20 > ma60)
+            & (ma60 > ma60.groupby(data["symbol"]).shift(20))
+            & (data["close"] <= ma20 * 1.15)
+            & (turnover20 >= 50_000_000)
+            & return120_skip20.notna()
+            & downside_deviation60.notna()
+        )
+        quality_daily_rank = quality_score.where(quality_pool).groupby(
+            data["date"]
+        ).rank(method="first", ascending=False)
+        data["quality_rank"] = quality_daily_rank
+        data["quality_pool"] = quality_pool
+        data["quality_market"] = quality_market
+        data["output_allowed"] = output_mask
+
         ma_volume_signal = (
             ma5.groupby(data["symbol"]).shift(1)
             < ma20.groupby(data["symbol"]).shift(1)
@@ -325,6 +624,9 @@ class StrategyValidationService:
                 & (rps >= 80)
             ),
             "CompositeTrendRankStrategy": composite_daily_rank <= 20,
+            "PriceQualityMultiFactorV1Strategy": (
+                (quality_daily_rank <= QUALITY_ENTRY_RANK) & quality_market
+            ),
         }
 
         regime_by_date = pd.DataFrame(
@@ -420,6 +722,59 @@ class StrategyValidationService:
                     )
             result[strategy_name] = strategy_result
 
+        portfolio_periods, latest_holdings = _ranked_portfolio_periods(
+            data,
+            complete_dates,
+            commission_rate=self.commission_rate,
+            stamp_duty_rate=self.stamp_duty_rate,
+            slippage_rate=self.slippage_rate,
+        )
+        portfolio_development = _portfolio_summary(
+            portfolio_periods[portfolio_periods["signal_date"] < holdout_start]
+            if not portfolio_periods.empty
+            else portfolio_periods
+        )
+        portfolio_holdout = _portfolio_summary(
+            portfolio_periods[portfolio_periods["signal_date"] >= holdout_start]
+            if not portfolio_periods.empty
+            else portfolio_periods
+        )
+        portfolio_curve: list[dict[str, Any]] = []
+        if not portfolio_periods.empty:
+            strategy_equity = (1 + portfolio_periods["return"]).cumprod()
+            benchmark_equity = (1 + portfolio_periods["benchmark_return"]).cumprod()
+            portfolio_curve = [
+                {
+                    "date": str(row.execution_date),
+                    "equity": _number(strategy_equity.loc[row.Index], 4),
+                    "benchmark": _number(benchmark_equity.loc[row.Index], 4),
+                    "holdings": int(row.holdings),
+                    "market_open": bool(row.market_open),
+                }
+                for row in portfolio_periods.itertuples()
+            ]
+        result["PriceQualityMultiFactorV1Strategy"]["portfolio"] = {
+            "method": (
+                "每5个完整交易日调仓；收盘计算排名，下一交易日开盘等权成交；"
+                "新买入前20名，原持仓跌出前40名才卖出；市场过滤不通过时持有现金。"
+            ),
+            "overall": _portfolio_summary(portfolio_periods),
+            "development": portfolio_development,
+            "holdout": portfolio_holdout,
+            "evidence": _portfolio_evidence(
+                portfolio_development, portfolio_holdout
+            ),
+            "latest_holdings": [
+                {
+                    "symbol": symbol,
+                    "name": names.get(symbol, ""),
+                    "board": board_names.get(symbol, "其他/待核对"),
+                }
+                for symbol in latest_holdings
+            ],
+            "curve": portfolio_curve,
+        }
+
         result["PrivatePlacementStrategy"] = {
             "name": STRATEGIES["PrivatePlacementStrategy"]["name"],
             "description": STRATEGIES["PrivatePlacementStrategy"]["description"],
@@ -441,7 +796,7 @@ class StrategyValidationService:
             for item in result.values()
         )
         return {
-            "schema": 2,
+            "schema": 3,
             "generated_at": datetime.now().isoformat(timespec="seconds"),
             "database": str(Path(self.engine.db_path).resolve()),
             "source_rows": len(data),
@@ -492,15 +847,33 @@ class StrategyValidationService:
                     "low_volatility": 0.15,
                     "liquidity": 0.05,
                 },
+                "price_quality_v1": {
+                    "entry_rank": QUALITY_ENTRY_RANK,
+                    "exit_rank": QUALITY_EXIT_RANK,
+                    "rebalance_days": QUALITY_REBALANCE_DAYS,
+                    "market_filter": "市场宽度不低于50%，且全市场20日收益中位数不低于-2%",
+                    "weights": {
+                        "momentum_120_skip_20": 0.25,
+                        "momentum_60_skip_5": 0.20,
+                        "trend_consistency": 0.15,
+                        "low_downside_volatility": 0.15,
+                        "drawdown_resilience": 0.10,
+                        "liquidity": 0.10,
+                        "turnover_stability": 0.05,
+                        "short_term_overheat_penalty": -0.05,
+                    },
+                },
             },
             "strategies": result,
             "limitations": [
-                "这是逐日事件验证，不是多股票组合回测，因此不计算组合最大回撤。",
+                "普通策略仍采用逐日事件验证；价格质量多因子 V1 另有每周等权组合回测和最大回撤。",
                 "同一股票在持有周期内的重复信号只保留第一次，减少重叠样本。",
                 "市场基准是同日可交易股票的等权平均收益，不是沪深300等可投资指数。",
                 "股票简称只保存当前状态，无法准确还原历史日期的ST状态。",
                 "股票池来自本地回填记录，仍可能存在退市股票缺失造成的存活偏差。",
-                "本地历史库目前只有OHLCV和成交额，缺少逐日财务、估值与行业分类，暂时不能验证质量、价值或行业中性因子。",
+                "价格质量多因子 V1 的质量只表示趋势连续性、下行波动和成交稳定性，不代表公司财务质量。",
+                "本地历史库目前只有OHLCV和成交额，缺少逐日财务、估值与行业分类；V1只能做板块内排名，不能做行业中性化。",
+                "组合回测按调仓日开盘可成交处理；个股停牌时按该周期收益为0，尚未完整模拟涨跌停排队、冲击成本和持仓权重漂移。",
                 "定增策略缺少逐日事件快照，本报告不伪造其历史回测。",
                 f"证据标签以 {holdout_start} 起的留出期为核心，并要求此前开发期与留出期同时为正；研究候选未进入正式选股。",
             ],
