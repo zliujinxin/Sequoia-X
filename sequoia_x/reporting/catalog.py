@@ -33,6 +33,10 @@ STRATEGIES = {
         "name": "高位整理突破 V2", "key": "flag_breakout_v2", "category": "研究候选",
         "description": "先确认高位收敛缩量，再要求当日放量突破10日平台，并通过市场环境、RPS和流动性过滤。仅参与历史验证。",
     },
+    "CompositeTrendRankStrategy": {
+        "name": "多因子趋势排名", "key": "composite_trend_rank", "category": "研究候选",
+        "description": "在价格高于MA20、MA20高于MA60且20日平均成交额不低于5000万元的股票中，按120/60/20日动量、趋势强度、低波动和流动性综合评分，每日只取前20名。仅参与历史验证。",
+    },
     "PrivatePlacementStrategy": {
         "name": "定增事件", "key": "private_placement", "category": "事件提醒",
         "description": "增发数据中发行方式为定向增发，发行日期不早于当前日期减7个自然日。按发行日期筛选，非公告日。",

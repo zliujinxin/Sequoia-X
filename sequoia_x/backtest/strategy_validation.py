@@ -34,6 +34,7 @@ BASELINE_STRATEGIES = [
 RESEARCH_STRATEGIES = [
     "MaVolumeV2Strategy",
     "HighTightFlagBreakoutV2Strategy",
+    "CompositeTrendRankStrategy",
 ]
 MARKET_STRATEGIES = BASELINE_STRATEGIES + RESEARCH_STRATEGIES
 
@@ -169,6 +170,7 @@ class StrategyValidationService:
         ma20 = _rolling(grouped, "close", 20, "mean")
         ma60 = _rolling(grouped, "close", 60, "mean")
         volume20 = _rolling(grouped, "volume", 20, "mean")
+        turnover20 = _rolling(grouped, "turnover", 20, "mean")
         prior_volume20 = grouped["volume"].shift(1).groupby(data["symbol"]).rolling(
             20, min_periods=20
         ).mean().reset_index(level=0, drop=True)
@@ -200,6 +202,11 @@ class StrategyValidationService:
         )
         rps = return120.groupby(data["date"]).rank(pct=True) * 100
         return20 = data["close"] / grouped["close"].shift(20) - 1
+        return60 = data["close"] / grouped["close"].shift(60) - 1
+        daily_return = data["close"] / previous_close - 1
+        volatility20 = daily_return.groupby(data["symbol"]).rolling(
+            20, min_periods=20
+        ).std().reset_index(level=0, drop=True)
         breadth_above_ma20 = (data["close"] > ma20).where(complete_mask).groupby(
             data["date"]
         ).transform("mean")
@@ -209,6 +216,34 @@ class StrategyValidationService:
         favorable_market = (
             (breadth_above_ma20 >= 0.55) & (market_median_return20 > 0)
         )
+        rank120 = return120.where(complete_mask).groupby(data["date"]).rank(pct=True)
+        rank60 = return60.where(complete_mask).groupby(data["date"]).rank(pct=True)
+        rank20 = return20.where(complete_mask).groupby(data["date"]).rank(pct=True)
+        trend_strength = (data["close"] / ma60 - 1).where(complete_mask)
+        rank_trend = trend_strength.groupby(data["date"]).rank(pct=True)
+        rank_low_volatility = 1 - volatility20.where(complete_mask).groupby(
+            data["date"]
+        ).rank(pct=True)
+        rank_liquidity = turnover20.where(complete_mask).groupby(
+            data["date"]
+        ).rank(pct=True)
+        composite_score = (
+            rank120 * 0.30
+            + rank60 * 0.20
+            + rank20 * 0.15
+            + rank_trend * 0.15
+            + rank_low_volatility * 0.15
+            + rank_liquidity * 0.05
+        )
+        composite_pool = (
+            (data["close"] > ma20)
+            & (ma20 > ma60)
+            & (turnover20 >= 50_000_000)
+            & return120.notna()
+        )
+        composite_daily_rank = composite_score.where(composite_pool).groupby(
+            data["date"]
+        ).rank(method="first", ascending=False)
 
         names = self.engine.get_stock_names()
         ratios = {
@@ -289,6 +324,7 @@ class StrategyValidationService:
                 & (data["turnover"] >= 50_000_000)
                 & (rps >= 80)
             ),
+            "CompositeTrendRankStrategy": composite_daily_rank <= 20,
         }
 
         regime_by_date = pd.DataFrame(
@@ -446,6 +482,17 @@ class StrategyValidationService:
                     regime_by_date.iloc[-1]["median_return20"] * 100
                 ),
             },
+            "research_policy": {
+                "composite_daily_top_n": 20,
+                "composite_weights": {
+                    "momentum_120": 0.30,
+                    "momentum_60": 0.20,
+                    "momentum_20": 0.15,
+                    "trend_strength": 0.15,
+                    "low_volatility": 0.15,
+                    "liquidity": 0.05,
+                },
+            },
             "strategies": result,
             "limitations": [
                 "这是逐日事件验证，不是多股票组合回测，因此不计算组合最大回撤。",
@@ -453,6 +500,7 @@ class StrategyValidationService:
                 "市场基准是同日可交易股票的等权平均收益，不是沪深300等可投资指数。",
                 "股票简称只保存当前状态，无法准确还原历史日期的ST状态。",
                 "股票池来自本地回填记录，仍可能存在退市股票缺失造成的存活偏差。",
+                "本地历史库目前只有OHLCV和成交额，缺少逐日财务、估值与行业分类，暂时不能验证质量、价值或行业中性因子。",
                 "定增策略缺少逐日事件快照，本报告不伪造其历史回测。",
                 f"证据标签以 {holdout_start} 起的留出期为核心，并要求此前开发期与留出期同时为正；研究候选未进入正式选股。",
             ],
