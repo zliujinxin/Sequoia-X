@@ -21,6 +21,7 @@ logger = get_logger(__name__)
 def _handler_factory(settings: Any, analysis: ChanlunAnalysisService):
     page = Path(__file__).with_name("chanlun.html").read_bytes()
     report_path = Path(settings.report_dir) / "latest.html"
+    validation_path = Path(settings.report_dir) / "strategy-validation-latest.html"
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "SequoiaX/2"
@@ -53,6 +54,19 @@ def _handler_factory(settings: Any, analysis: ChanlunAnalysisService):
                 return
             if parsed.path == "/chanlun":
                 self._send(HTTPStatus.OK, page, "text/html; charset=utf-8")
+                return
+            if parsed.path == "/validation":
+                if validation_path.exists():
+                    self._send(
+                        HTTPStatus.OK,
+                        validation_path.read_bytes(),
+                        "text/html; charset=utf-8",
+                    )
+                else:
+                    self._json(
+                        HTTPStatus.NOT_FOUND,
+                        {"error": "尚未生成策略验证报告，请先运行 main.py --validate-strategies"},
+                    )
                 return
             if parsed.path == "/api/health":
                 self._json(HTTPStatus.OK, {"status": "ok"})

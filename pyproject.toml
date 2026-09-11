@@ -28,5 +28,6 @@ select = ["E", "F", "I", "UP"]
 testpaths = ["tests"]
 
 [tool.setuptools.package-data]
+"sequoia_x.backtest" = ["strategy_validation.html"]
 "sequoia_x.reporting" = ["template.html", "tdx_export.js"]
 "sequoia_x.web" = ["chanlun.html"]

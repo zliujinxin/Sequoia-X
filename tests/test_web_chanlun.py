@@ -207,6 +207,11 @@ class ChanlunWebTests(unittest.TestCase):
         self.assertTrue(result["mmds"][0]["temporal_mismatch"])
 
     def test_local_server_serves_page_health_and_api(self):
+        report_dir = Path(self.settings.report_dir)
+        report_dir.mkdir(parents=True, exist_ok=True)
+        (report_dir / "strategy-validation-latest.html").write_text(
+            "<html><body>策略验证测试</body></html>", encoding="utf-8"
+        )
         server = create_server(self.settings, "127.0.0.1", 0, FakeAnalysis())
         thread = Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -220,6 +225,8 @@ class ChanlunWebTests(unittest.TestCase):
             self.assertIn('min="100" max="2000"', page)
         with urlopen(base + "/api/health", timeout=2) as response:
             self.assertEqual(json.load(response), {"status": "ok"})
+        with urlopen(base + "/validation", timeout=2) as response:
+            self.assertIn("策略验证测试", response.read().decode("utf-8"))
         with urlopen(base + "/api/chanlun?symbol=002475", timeout=2) as response:
             self.assertEqual(json.load(response)["symbol"], "002475")
 

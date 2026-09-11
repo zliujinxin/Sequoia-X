@@ -6,6 +6,7 @@
   python main.py --local-only  # 使用本地行情选股并推送，不请求行情数据源
   python main.py --check-provider easy_tdx  # 影子比较，不写正式行情
   python main.py --serve        # 启动本地观察台与个股缠论查询
+  python main.py --validate-strategies --no-browser  # 严格逐日验证选股策略
 """
 
 import argparse
@@ -50,10 +51,23 @@ def main() -> None:
         help="影子校验候选行情源；只读本地正式行情，不写 stock_daily",
     )
     modes.add_argument("--serve", action="store_true", help="启动本地观察台与个股缠论查询")
+    modes.add_argument(
+        "--validate-strategies",
+        action="store_true",
+        help="使用本地历史日线严格逐日验证选股策略，不联网、不推送",
+    )
     parser.add_argument("--port", type=int, default=8765, help="本地页面端口（默认 8765）")
     parser.add_argument("--no-browser", action="store_true", help="启动页面服务后不自动打开浏览器")
     parser.add_argument("--check-sample-size", type=int, help="影子校验股票样本数（1-100）")
     parser.add_argument("--check-days", type=int, help="每只股票最多比较的最近日线数（30-2000）")
+    parser.add_argument(
+        "--validation-horizons",
+        nargs="+",
+        type=int,
+        default=[5, 20],
+        metavar="DAYS",
+        help="策略验证持有周期，交易日数，可传多个（默认 5 20）",
+    )
     parser.add_argument("--no-notify", action="store_true", help="生成本地报告，不发送飞书消息")
     parser.add_argument("--force-notify", action="store_true", help="即使名单无明显变化，也发送当前摘要")
     parser.add_argument("--boards", nargs="+", choices=list(BOARDS), help="只输出这些板块：sh_main沪主板 sz_main深主板 star科创 chinext创业 bse北交所；不改变RPS计算池")
@@ -90,6 +104,24 @@ def main() -> None:
         if args.check_provider:
             reference_settings = settings.model_copy(update={"data_provider": "baostock"})
         engine = DataEngine(reference_settings)
+
+        if args.validate_strategies:
+            horizons = tuple(dict.fromkeys(args.validation_horizons))
+            if not horizons or any(value < 1 or value > 120 for value in horizons):
+                parser.error("--validation-horizons 必须是 1 到 120 之间的整数")
+            from sequoia_x.backtest import StrategyValidationService
+
+            logger.info(f"开始严格逐日验证，持有周期={list(horizons)}")
+            validation = StrategyValidationService(engine, settings)
+            report = validation.run(horizons)
+            html_path, json_path = validation.write(report)
+            logger.info(f"策略验证完成：HTML={html_path}")
+            logger.info(f"结构化结果：JSON={json_path}")
+            if not args.no_browser:
+                import webbrowser
+
+                webbrowser.open(html_path.as_uri())
+            return
 
         if args.check_provider:
             sample_size = args.check_sample_size or settings.provider_check_sample_size
